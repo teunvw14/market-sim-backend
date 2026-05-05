@@ -1,0 +1,22 @@
+[package]
+name = "backend"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bytes = "1.11.1"
+dashmap = "6.1.0"
+fixed = "1.31.0"
+mini-redis = "0.4.1"
+rand = "0.10.1"
+thiserror = "2.0.18"
+tokio = { version = "1.51.0", features = ["full"] }
+criterion = { version = "0.8", features = ["html_reports"] }
+
+[[bench]]
+name = "trades"
+harness = false
+
+[profile.profiling]
+inherits = "release"
+debug = true
