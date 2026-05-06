@@ -1,12 +1,16 @@
+use core::num;
 use std::error::Error;
 use std::hash::Hash;
 use std::{collections::HashMap, fmt::Display};
 
 use fixed::traits::Fixed;
-use fixed::types::*;
 use thiserror::Error;
 
+use crate::asset::*;
 use crate::market::*;
+use crate::order::*;
+use crate::orderbook::*;
+use crate::types::*;
 
 // Errors
 
@@ -19,37 +23,83 @@ pub enum MarketCreationError {
 }
 
 #[derive(Debug)]
-pub struct Exchange {
-    accounts: HashMap<AccountId, Account>,
-    traded_assets: HashMap<AssetId, Asset>,
-    markets: HashMap<AssetIdPair, Market>,
-    last_account_id: usize,
-    last_asset_id: AssetId,
-    last_order_id: usize,
+pub struct BalanceBook {
+    inner: Vec<Balance>,
+}
+impl BalanceBook {
+    pub fn new() -> Self {
+        Self { inner: Vec::new() }
+    }
+    fn get_index(asset_id: AssetId, account_id: AccountId, num_accounts: usize) -> Option<usize> {
+        if account_id as usize >= num_accounts {
+            return None;
+        }
+        Some(num_accounts as usize * asset_id as usize + account_id as usize)
+    }
+
+    pub fn get(
+        &self,
+        asset_id: AssetId,
+        account_id: AccountId,
+        num_accounts: usize,
+    ) -> Option<&Balance> {
+        let index = BalanceBook::get_index(asset_id, account_id, num_accounts)?;
+        self.inner.get(index)
+    }
+
+    pub fn get_mut(
+        &mut self,
+        asset_id: AssetId,
+        account_id: AccountId,
+        num_accounts: usize,
+    ) -> Option<&mut Balance> {
+        let index = BalanceBook::get_index(asset_id, account_id, num_accounts)?;
+        self.inner.get_mut(index)
+    }
+
+    pub fn add_asset(&mut self, num_accounts: usize) {
+        for _ in 0..num_accounts {
+            self.inner.push(Balance::ZERO);
+        }
+    }
+
+    pub fn add_account(&mut self, num_accounts: usize, num_assets: usize) {
+        for i in 0..num_assets {
+            let index = (i + 1) * num_accounts + i;
+            self.inner.insert(index, Balance::ZERO);
+        }
+    }
 }
 
-pub type AccountId = usize;
+#[derive(Debug)]
+pub struct Exchange {
+    accounts: HashMap<AccountId, Account>,
+    balances: BalanceBook,
+    traded_assets: HashMap<AssetId, Asset>,
+    markets: HashMap<AssetIdPair, Market>,
+    last_order_id: usize,
+    orders: Vec<Order>,
+}
 
 #[derive(Debug)]
 pub struct Account {
     id: AccountId,
-    balances: HashMap<AssetId, Balance>,
 }
 
 impl Exchange {
     pub fn new() -> Self {
         Exchange {
             accounts: HashMap::new(),
+            balances: BalanceBook::new(),
             traded_assets: HashMap::new(),
             markets: HashMap::new(),
-            last_account_id: 0,
             last_order_id: 0,
-            last_asset_id: 0,
+            orders: Vec::new(),
         }
     }
 
     pub fn add_asset(&mut self, name: &str, symbol: &str) -> AssetId {
-        let new_id = self.last_asset_id + 1;
+        let new_id = self.traded_assets.len() as u32;
         let name = name.to_string();
         let symbol = symbol.to_string();
         let new_asset = Asset {
@@ -58,7 +108,8 @@ impl Exchange {
             symbol,
         };
         self.traded_assets.insert(new_id, new_asset.clone());
-        self.last_asset_id += 1;
+        let num_accounts = self.accounts.len();
+        self.balances.add_asset(num_accounts);
         new_id
     }
 
@@ -66,16 +117,9 @@ impl Exchange {
         self.traded_assets.remove(&asset_id);
     }
 
-    pub fn add_account(&mut self) -> usize {
-        let new_id = self.last_account_id + 1;
-        self.accounts.insert(
-            new_id,
-            Account {
-                id: new_id,
-                balances: HashMap::new(),
-            },
-        );
-        self.last_account_id = new_id;
+    pub fn add_account(&mut self) -> AccountId {
+        let new_id = self.accounts.len() as u32;
+        self.accounts.insert(new_id, Account { id: new_id });
         new_id
     }
 
@@ -109,19 +153,25 @@ impl Exchange {
         account_id: AccountId,
         order_type: OrderType,
         side: Side,
-        volume: u32,
+        volume: Volume,
         price: Price,
     ) -> Order {
         let new_id = self.last_order_id + 1;
         self.last_order_id = new_id;
-        Order {
+        let result = Order {
             id: new_id,
             account_id,
             order_type,
             side,
             volume,
             price,
-        }
+        };
+        self.orders.push(result);
+        result
+    }
+
+    pub fn get_account_mut(&mut self, id: &AccountId) -> Option<&mut Account> {
+        self.accounts.get_mut(id)
     }
 
     pub fn insert_order(
@@ -130,7 +180,7 @@ impl Exchange {
         account_id: AccountId,
         order_type: OrderType,
         side: Side,
-        volume: u32,
+        volume: Volume,
         price: Price,
     ) -> Result<OrderExecutionStatus, OrderExecutionError> {
         // Check order volume
@@ -147,15 +197,17 @@ impl Exchange {
         let market = self.markets.get_mut(&asset_pair).unwrap();
         let execution_effects = market.execute_order(order)?;
 
-        for balance_transfer in execution_effects.balance_transfers {
+        let num_accounts = self.accounts.len();
+        let balances = &mut self.balances;
+        for balance_transfer in &execution_effects.balance_transfers {
             let asset_id = balance_transfer.asset_id;
+            let from = balance_transfer.from_id;
+            let to = balance_transfer.to_id;
 
-            let from = self.accounts.get_mut(&balance_transfer.from_id).unwrap();
-            let from_balance = from.balances.entry(asset_id).or_insert(Balance::ZERO);
+            let from_balance = balances.get_mut(asset_id, from, num_accounts).unwrap();
             *from_balance -= balance_transfer.change;
 
-            let to = self.accounts.get_mut(&balance_transfer.to_id).unwrap();
-            let to_balance = to.balances.entry(asset_id).or_insert(Balance::ZERO);
+            let to_balance = balances.get_mut(asset_id, to, num_accounts).unwrap();
             *to_balance += balance_transfer.change;
         }
 

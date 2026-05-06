@@ -12,11 +12,9 @@ rand = "0.10.1"
 thiserror = "2.0.18"
 tokio = { version = "1.51.0", features = ["full"] }
 criterion = { version = "0.8", features = ["html_reports"] }
-
-[[bench]]
-name = "trades"
-harness = false
+num-format = "0.4.4"
 
 [profile.profiling]
+opt-level = 3
 inherits = "release"
 debug = true

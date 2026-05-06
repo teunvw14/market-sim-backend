@@ -5,16 +5,16 @@ use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use dashmap::DashMap;
-use tokio::net::{TcpListener, TcpStream};
 use fixed::types::*;
+use num_format::{Buffer, CustomFormat, Error, Grouping, ToFormattedString};
+use tokio::net::{TcpListener, TcpStream};
 
 use rand::RngExt;
 
 use mini_redis::Command::{self, Get, Set};
 use mini_redis::{Connection, Frame};
 
-use backend::exchange::*;
-use backend::{exchange, market::*};
+use backend::{asset::*, exchange::*, order::*, statics::{ORDER_PRICES, VOLUMES}, types::*};
 
 #[derive(Clone)]
 struct SharedMap<K, V> {
@@ -75,64 +75,52 @@ async fn process(socket: TcpStream, db: SharedMap<String, Bytes>) {
     }
 }
 
-// fn main() {
-//     let mut exchange = Exchange::new();
-//     let acc_id_1 = exchange.add_account();
-//     let acc_id_2 = exchange.add_account();
+fn test_main() {
+    let mut exchange = Exchange::new();
+    let acc_id_1 = exchange.add_account();
+    let acc_id_2 = exchange.add_account();
 
-//     let EUR_id = exchange.add_asset("Euro", "EUR");
-//     let USD_id = exchange.add_asset("United States Dollar", "USD");
-//     let pair = AssetIdPair {
-//         primary: EUR_id,
-//         secondary: USD_id,
-//     };
-//     exchange.create_market(pair).unwrap();
+    let EUR_id = exchange.add_asset("Euro", "EUR");
+    let USD_id = exchange.add_asset("United States Dollar", "USD");
+    let pair = AssetIdPair {
+        primary: EUR_id,
+        secondary: USD_id,
+    };
+    exchange.create_market(pair).unwrap();
 
-//     let price: Price = Price::lit("0.86");
-//     let order = Order {
-//         id: 1,
-//         account_id: acc_id_1,
-//         order_type: OrderType::Limit,
-//         price,
-//         side: Side::Ask,
-//         volume: 5,
-//     };
-//     let price: Price = Price::lit("0.85");
-//     exchange.execute_order(pair, order).unwrap();
-//     let order = Order {
-//         id: 1,
-//         account_id: acc_id_1,
-//         order_type: OrderType::Limit,
-//         price,
-//         side: Side::Ask,
-//         volume: 5,
-//     };
-//     exchange.execute_order(pair, order).unwrap();
-//     println!("{exchange:#?}");
-//     let price: Price = Price::lit("0.9");
-//     let order = Order {
-//         id: 2,
-//         account_id: acc_id_2,
-//         order_type: OrderType::Limit,
-//         price,
-//         side: Side::Bid,
-//         volume: 20,
-//     };
-//     exchange.execute_order(pair, order).unwrap();
+    let price: Price = Price::lit("0.85");
+    exchange
+    .insert_order(pair, acc_id_1, OrderType::Limit, Side::Ask, 5, price)
+    .unwrap();
+    let price: Price = Price::lit("0.86");
+    exchange
+        .insert_order(pair, acc_id_1, OrderType::Limit, Side::Ask, 5, price)
+        .unwrap();
+    println!("{exchange:#?}");
+    let price: Price = Price::lit("0.9");
+    exchange
+        .insert_order(pair, acc_id_2, OrderType::Limit, Side::Bid, 20, price)
+        .unwrap();
 
-//     println!("");
-//     println!("{exchange:#?}");
-// }
+    println!("");
+    println!("{exchange:#?}");
+}
 
-fn main() {
+fn bench_main() {
     let mut exchange = Exchange::new();
     let N = 10;
     for _ in 0..N {
         exchange.add_account();
     }
 
-    let EUR_id = exchange.add_asset("Euro", "EUR");
+    let JPY_id = exchange.add_asset("Japanese Yen", "JPY");
     let USD_id = exchange.add_asset("United States Dollar", "USD");
+    let pair = AssetIdPair {
+        primary: JPY_id,
+        secondary: USD_id,
+    };
+    exchange.create_market(pair).unwrap();
+    let EUR_id = exchange.add_asset("Euro", "EUR");
     let pair = AssetIdPair {
         primary: EUR_id,
         secondary: USD_id,
@@ -147,34 +135,27 @@ fn main() {
     let mut successful_count: u64 = 0;
 
     let start = Instant::now();
-    let test_duration = Duration::from_secs(30);
+    let test_duration = Duration::from_secs(15);
 
     let mut elapsed = Duration::ZERO;
-    
+
     while elapsed < test_duration {
         order_id += 1;
 
         // Random price between 0.5 and 1.5
-        let price_val: i32 = random_generator.random_range(80..120);
-        let price =  Price::from(price_val);
+        let price = Price::from(ORDER_PRICES[order_id % ORDER_PRICES.len()]);
 
         // Alternate accounts to avoid self-trades
-        let account_id = 1 + order_id % N;
+        let account_id = (order_id % N) as AccountId;
         let side = if order_id % 2 == 0 {
             Side::Bid
         } else {
             Side::Ask
         };
 
+        let volume = VOLUMES[order_id % VOLUMES.len()];
         // Ignore errors if desired, or handle them
-        let result = exchange.insert_order(
-            pair,
-            account_id,
-            OrderType::Limit,
-            side,
-            10,
-            price,
-        );
+        let result = exchange.insert_order(pair, account_id, OrderType::Limit, side, volume, price);
 
         count += 1;
         if result.is_ok() {
@@ -192,8 +173,13 @@ fn main() {
     let elapsed = start.elapsed().as_secs_f64();
     let ops_per_sec = count as f64 / elapsed;
 
+    let format = CustomFormat::builder().separator(" ").build().unwrap();
+    let count = count.to_formatted_string(&format);
+    let successful_count = successful_count.to_formatted_string(&format);
+    let ops_per_sec = (ops_per_sec.floor() as u64).to_formatted_string(&format);
+
     println!("Processed {count} orders ({successful_count} successful) in {elapsed:.2} seconds");
-    println!("Throughput: {:.2} orders/sec", ops_per_sec);
+    println!("Throughput: {ops_per_sec} orders/sec");
     // println!("{exchange:?}");
 }
 
@@ -216,3 +202,8 @@ fn main() {
 //         });
 //     }
 // }
+
+fn main() {
+    // test_main();
+    bench_main();
+}
