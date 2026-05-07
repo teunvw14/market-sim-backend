@@ -14,7 +14,13 @@ use rand::RngExt;
 use mini_redis::Command::{self, Get, Set};
 use mini_redis::{Connection, Frame};
 
-use backend::{asset::*, exchange::*, order::*, statics::{ORDER_PRICES, VOLUMES}, types::*};
+use backend::{
+    asset::*,
+    exchange::*,
+    order::*,
+    statics::{ORDER_PRICES, VOLUMES},
+    types::*,
+};
 
 #[derive(Clone)]
 struct SharedMap<K, V> {
@@ -90,16 +96,16 @@ fn test_main() {
 
     let price: Price = Price::lit("0.85");
     exchange
-    .insert_order(pair, acc_id_1, OrderType::Limit, Side::Ask, 5, price)
-    .unwrap();
+        .insert_order(acc_id_1, OrderType::Limit, pair, Side::Ask, 5, price)
+        .unwrap();
     let price: Price = Price::lit("0.86");
     exchange
-        .insert_order(pair, acc_id_1, OrderType::Limit, Side::Ask, 5, price)
+        .insert_order(acc_id_1, OrderType::Limit, pair, Side::Ask, 5, price)
         .unwrap();
     println!("{exchange:#?}");
     let price: Price = Price::lit("0.9");
     exchange
-        .insert_order(pair, acc_id_2, OrderType::Limit, Side::Bid, 20, price)
+        .insert_order(acc_id_2, OrderType::Limit, pair, Side::Bid, 20, price)
         .unwrap();
 
     println!("");
@@ -128,18 +134,12 @@ fn bench_main() {
     exchange.create_market(pair).unwrap();
     println!("{exchange:?}");
 
-    let mut random_generator = rand::rng();
-
     let mut order_id: usize = 0;
-    let mut count: u64 = 0;
-    let mut successful_count: u64 = 0;
 
     let start = Instant::now();
-    let test_duration = Duration::from_secs(15);
+    let test_duration = Duration::from_secs(10);
 
-    let mut elapsed = Duration::ZERO;
-
-    while elapsed < test_duration {
+    loop {
         order_id += 1;
 
         // Random price between 0.5 and 1.5
@@ -155,30 +155,27 @@ fn bench_main() {
 
         let volume = VOLUMES[order_id % VOLUMES.len()];
         // Ignore errors if desired, or handle them
-        let result = exchange.insert_order(pair, account_id, OrderType::Limit, side, volume, price);
+        let _result = exchange.insert_order(account_id, OrderType::Limit, pair, side, volume, price);
 
-        count += 1;
-        if result.is_ok() {
-            successful_count += 1;
-        }
         // let last_price_opt = exchange.get_last_price(pair);
         // if let Some(last_price) = last_price_opt {
         //     print!("\rLast traded price {last_price:?}                         ")
         // }
-        if count % 1_000_000 == 0 {
-            elapsed = start.elapsed();
+        if order_id % 5_000_000 == 0 {
+            if start.elapsed() > test_duration {
+                break;
+            }
         }
     }
 
     let elapsed = start.elapsed().as_secs_f64();
-    let ops_per_sec = count as f64 / elapsed;
+    let ops_per_sec = order_id as f64 / elapsed;
 
     let format = CustomFormat::builder().separator(" ").build().unwrap();
-    let count = count.to_formatted_string(&format);
-    let successful_count = successful_count.to_formatted_string(&format);
+    let count = order_id.to_formatted_string(&format);
     let ops_per_sec = (ops_per_sec.floor() as u64).to_formatted_string(&format);
 
-    println!("Processed {count} orders ({successful_count} successful) in {elapsed:.2} seconds");
+    println!("Processed {count} orders in {elapsed:.2} seconds");
     println!("Throughput: {ops_per_sec} orders/sec");
     // println!("{exchange:?}");
 }

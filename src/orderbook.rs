@@ -1,5 +1,7 @@
 use std::cmp::min;
+use std::collections::btree_map::IterMut;
 use std::collections::{BTreeMap, VecDeque};
+use std::num::NonZero;
 
 use crate::asset::*;
 use crate::order::*;
@@ -36,30 +38,30 @@ pub enum OrderExecutionError {
     InadequateVolume,
 }
 
-/// A transfer of `change` units of `asset_id` from the `from_id` account to the
-/// `to_id` account.
-pub struct BalanceTransfer {
-    pub from_id: AccountId,
-    pub to_id: AccountId,
-    pub asset_id: AssetId,
-    pub change: Balance,
+/// A change in the remaining volume of order with id `id`. Change should always
+/// be interpreted as a decrease (negative change)
+#[derive(Debug)]
+pub struct OrderChange {
+    pub id: OrderId,
+    pub change: Volume,
 }
+
+type OrderChangeBuffer = Vec<OrderChange>;
 
 pub struct OrderExecutionEffects {
     pub status: OrderExecutionStatus,
-    pub balance_transfers: Vec<BalanceTransfer>,
     pub last_traded_price: Option<Price>,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum OrderExecutionStatus {
-    AwaitingExecution,
-    PartialFill(Volume),
+    AwaitingFill,
+    PartialFill,
     Filled,
-    Cancelled(Volume),
+    Cancelled,
 }
 
 pub type OrderExecutionResult = Result<OrderExecutionEffects, OrderExecutionError>;
-
 
 impl Orderbook {
     pub fn new() -> Orderbook {
@@ -89,35 +91,20 @@ impl Orderbook {
             Side::Ask => &mut self.asks,
             Side::Bid => &mut self.bids,
         };
-        let orders_at_price_opt = book_side.get_mut(&price);
-        match orders_at_price_opt {
-            None => {
-                book_side.insert(price, VecDeque::from([order.into()]));
-            }
-            Some(orders_at_price) => {
-                orders_at_price.push_back(order.into());
-            }
+        let first_entry_opt = match order.side {
+            Side::Ask => book_side.first_entry(),
+            Side::Bid => book_side.last_entry(),
+        };
+        if first_entry_opt.is_none() {
+            book_side.insert(price, VecDeque::from([order.into()]));
+        } else {
+            let mut first_entry = first_entry_opt.unwrap();
+            let orders_at_price = first_entry.get_mut();
+            orders_at_price.push_back(order.into());
         }
     }
 
-    fn clean_orderbook(&mut self) {
-        while let Some((_price, open_orders)) = self.bids.iter().next_back() {
-            if open_orders.len() == 0 {
-                self.bids.pop_last();
-            } else {
-                break;
-            }
-        }
-        while let Some((_price, open_orders)) = self.asks.iter().next() {
-            if open_orders.len() == 0 {
-                self.asks.pop_first();
-            } else {
-                break;
-            }
-        }
-    }
-
-    pub fn remove_order(&mut self, order: Order) -> OrderExecutionResult {
+    pub fn cancel_order(&mut self, order: Order) -> OrderExecutionResult {
         let side = match order.side {
             Side::Ask => &mut self.asks,
             Side::Bid => &mut self.bids,
@@ -137,122 +124,98 @@ impl Orderbook {
             }
         }
         Ok(OrderExecutionEffects {
-            status: OrderExecutionStatus::Cancelled(remaining_volume),
-            balance_transfers: Vec::new(),
+            status: OrderExecutionStatus::Cancelled,
             last_traded_price: None,
         })
     }
 
     pub fn insert_order_limit(
         &mut self,
-        asset_pair: &AssetIdPair,
         mut order: Order,
+        order_change_buf: &mut OrderChangeBuffer,
     ) -> OrderExecutionResult {
         let mut remaining = order.volume;
-        let mut balance_transfers = Vec::new();
         let mut last_traded_price = None;
-        if order.side == Side::Bid {
-            for (price, open_orders) in self.asks.iter_mut() {
-                if *price > order.price {
-                    break;
-                }
-                while let Some(open_order) = open_orders.iter_mut().next() {
-                    let diff = min(remaining, open_order.remaining_volume);
-                    open_order.remaining_volume -= diff;
-                    remaining -= diff;
 
-                    let primary_change = Balance::from(diff);
-                    let secondary_change = price * (diff as i64);
-                    // First asset swap
-                    balance_transfers.push(BalanceTransfer {
-                        from_id: open_order.account_id,
-                        to_id: order.account_id,
-                        asset_id: asset_pair.primary,
-                        change: primary_change,
-                    });
-
-                    // Second asset swap
-                    balance_transfers.push(BalanceTransfer {
-                        from_id: order.account_id,
-                        to_id: open_order.account_id,
-                        asset_id: asset_pair.secondary,
-                        change: secondary_change,
-                    });
-
-                    if open_order.remaining_volume == 0 {
-                        last_traded_price = Some(*price);
-                        open_orders.pop_front();
-                    }
-
-                    if remaining <= 0 {
-                        break;
-                    }
-                }
-                if remaining <= 0 {
-                    break;
-                }
-            }
-        } else if order.side == Side::Ask {
-            for (price, open_orders) in self.bids.iter_mut().rev() {
-                if *price < order.price {
-                    break;
-                }
-                while let Some(open_order) = open_orders.iter_mut().next() {
-                    let diff = min(remaining, open_order.remaining_volume);
-                    open_order.remaining_volume -= diff;
-                    remaining -= diff;
-
-                    let primary_change = Balance::from(diff);
-                    let secondary_change = price * (diff as i64);
-                    // First asset swap
-                    balance_transfers.push(BalanceTransfer {
-                        from_id: order.account_id,
-                        to_id: open_order.account_id,
-                        asset_id: asset_pair.primary,
-                        change: primary_change,
-                    });
-
-                    // Second asset swap
-                    balance_transfers.push(BalanceTransfer {
-                        from_id: open_order.account_id,
-                        to_id: order.account_id,
-                        asset_id: asset_pair.secondary,
-                        change: secondary_change,
-                    });
-
-                    if open_order.remaining_volume == 0 {
-                        open_orders.pop_front();
-                    }
-
-                    if remaining <= 0 {
-                        last_traded_price = Some(*price);
-                        break;
-                    }
-                }
-                if remaining <= 0 {
-                    break;
-                }
+        let prices = match order.side {
+            Side::Ask => &mut self.bids,
+            Side::Bid => &mut self.asks,
+        };
+        fn next_price_orders<'a>(
+            iterator: &'a mut IterMut<Price, VecDeque<OrderbookEntry>>,
+            side: Side,
+        ) -> Option<(&'a Price, &'a mut VecDeque<OrderbookEntry>)> {
+            match side {
+                Side::Ask => iterator.next(),
+                Side::Bid => iterator.next_back(),
             }
         }
 
+        while let Some((price, open_orders)) = next_price_orders(&mut prices.iter_mut(), order.side)
+        {
+            let bid_price_too_high = order.side == Side::Bid && *price > order.price;
+            let ask_price_too_low = order.side == Side::Ask && *price < order.price;
+            if bid_price_too_high || ask_price_too_low {
+                break;
+            }
+            while let Some(open_order) = open_orders.iter_mut().next() {
+                let diff = min(remaining, open_order.remaining_volume);
+                open_order.remaining_volume -= diff;
+                remaining -= diff;
+
+                // First OrderChange
+                order_change_buf.push(OrderChange {
+                    id: open_order.order_id,
+                    change: diff,
+                });
+
+                if open_order.remaining_volume == 0 {
+                    open_orders.pop_front();
+                }
+
+                if remaining <= 0 {
+                    last_traded_price = Some(*price);
+                    break;
+                }
+            }
+            if open_orders.is_empty() {
+                // Clean up orderbook
+                match order.side {
+                    Side::Ask => {
+                        prices.pop_first();
+                    }
+                    Side::Bid => {
+                        prices.pop_last();
+                    }
+                }
+            }
+            if remaining <= 0 {
+                break;
+            }
+        }
+
+        // Second order change
+        let volume_filled = order.volume - remaining;
+        order_change_buf.push(OrderChange {
+            id: order.id,
+            change: volume_filled,
+        });
+
         let result = if remaining > 0 {
             // Enter limit order into orderbook
-            let volume_filled = order.volume - remaining;
             order.volume = remaining;
             self.insert_limit_order_no_matching(order);
             Ok(OrderExecutionEffects {
-                status: OrderExecutionStatus::PartialFill(volume_filled),
-                balance_transfers,
+                status: OrderExecutionStatus::PartialFill,
                 last_traded_price,
             })
         } else {
             Ok(OrderExecutionEffects {
                 status: OrderExecutionStatus::Filled,
-                balance_transfers,
                 last_traded_price,
             })
         };
-        self.clean_orderbook();
+        // self.clean_orderbook();
         result
     }
 
@@ -260,6 +223,7 @@ impl Orderbook {
         &mut self,
         asset_pair: &AssetIdPair,
         order: Order,
+        order_change_buf: &mut OrderChangeBuffer,
     ) -> OrderExecutionResult {
         unimplemented!();
     }
@@ -268,6 +232,7 @@ impl Orderbook {
         &mut self,
         asset_pair: &AssetIdPair,
         order: Order,
+        order_change_buf: &mut OrderChangeBuffer,
     ) -> OrderExecutionResult {
         unimplemented!();
         // let side_offers = match order.side {

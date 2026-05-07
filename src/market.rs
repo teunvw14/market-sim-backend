@@ -27,12 +27,20 @@ impl Market {
         }
     }
 
-    pub fn execute_order(&mut self, order: Order) -> OrderExecutionResult {
+    pub fn execute_order(
+        &mut self,
+        order: Order,
+        order_change_buf: &mut Vec<OrderChange>,
+    ) -> OrderExecutionResult {
         let orderbook = &mut self.orderbook;
         let execution_result = match order.order_type {
-            OrderType::Limit => orderbook.insert_order_limit(&self.asset_pair, order),
-            OrderType::FillOrKill => orderbook.insert_order_fill_or_kill(&self.asset_pair, order),
-            OrderType::Market => orderbook.insert_order_market(&self.asset_pair, order),
+            OrderType::Limit => orderbook.insert_order_limit(order, order_change_buf),
+            OrderType::FillOrKill => {
+                orderbook.insert_order_fill_or_kill(&self.asset_pair, order, order_change_buf)
+            }
+            OrderType::Market => {
+                orderbook.insert_order_market(&self.asset_pair, order, order_change_buf)
+            }
         };
         if execution_result.is_ok() {
             if let Some(last_traded_price) = execution_result.as_ref().unwrap().last_traded_price {
@@ -58,5 +66,3 @@ impl Display for AssetPair {
         write!(f, "{primary_symbol}/{secondary_symbol}")
     }
 }
-
-

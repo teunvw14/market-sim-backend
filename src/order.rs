@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::types::*;
+use crate::{asset::*, orderbook::OrderExecutionStatus, types::*};
 
 #[derive(Debug, Clone, Copy)]
 pub enum OrderType {
@@ -20,9 +20,11 @@ pub struct Order {
     pub id: OrderId,
     pub account_id: AccountId,
     pub order_type: OrderType,
+    pub pair: AssetIdPair,
     pub side: Side,
     pub volume: Volume,
     pub price: Price,
+    pub status: OrderExecutionStatus,
 }
 
 impl Display for Order {

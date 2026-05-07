@@ -71,14 +71,59 @@ impl BalanceBook {
     }
 }
 
+/// Thin wrapper around a vec for faster lookups of key-existence
+#[derive(Debug)]
+pub struct Markets {
+    pub keys: Vec<AssetIdPair>,
+    pub inner: Vec<Market>,
+}
+
+impl Markets {
+    pub fn new() -> Self {
+        Markets {
+            keys: Vec::new(),
+            inner: Vec::new(),
+        }
+    }
+
+    pub fn contains(&self, key: &AssetIdPair) -> bool {
+        self.keys.contains(key)
+    }
+
+    pub fn get(&self, key: &AssetIdPair) -> Option<&Market> {
+        let mut result = None;
+        for market in &self.inner {
+            if market.asset_pair == *key {
+                result = Some(market);
+            }
+        }
+        result
+    }
+
+    pub fn get_mut(&mut self, key: &AssetIdPair) -> Option<&mut Market> {
+        let mut result = None;
+        for market in &mut self.inner {
+            if market.asset_pair == *key {
+                result = Some(market);
+            }
+        }
+        result
+    }
+
+    pub fn add_market(&mut self, market: Market) {
+        self.keys.push(market.asset_pair);
+        self.inner.push(market);
+    }
+}
+
 #[derive(Debug)]
 pub struct Exchange {
     accounts: HashMap<AccountId, Account>,
     balances: BalanceBook,
     traded_assets: HashMap<AssetId, Asset>,
-    markets: HashMap<AssetIdPair, Market>,
-    last_order_id: usize,
-    orders: Vec<Order>,
+    markets: Markets,
+    session_orders: Vec<Order>,
+    order_change_buf: Vec<OrderChange>,
 }
 
 #[derive(Debug)]
@@ -92,9 +137,9 @@ impl Exchange {
             accounts: HashMap::new(),
             balances: BalanceBook::new(),
             traded_assets: HashMap::new(),
-            markets: HashMap::new(),
-            last_order_id: 0,
-            orders: Vec::new(),
+            markets: Markets::new(),
+            session_orders: Vec::with_capacity(100_000),
+            order_change_buf: Vec::with_capacity(100),
         }
     }
 
@@ -125,7 +170,7 @@ impl Exchange {
 
     pub fn create_market(&mut self, asset_pair: AssetIdPair) -> Result<(), MarketCreationError> {
         // Only one market allowed per asset pair
-        if self.markets.contains_key(&asset_pair) {
+        if self.markets.contains(&asset_pair) {
             return Err(MarketCreationError::MarketAlreadyExists { asset_pair });
         };
         // Market can only be created for listed assets
@@ -139,7 +184,7 @@ impl Exchange {
                 asset: asset_pair.secondary,
             });
         };
-        self.markets.insert(asset_pair, Market::new(&asset_pair));
+        self.markets.add_market(Market::new(&asset_pair));
         Ok(())
     }
 
@@ -152,21 +197,24 @@ impl Exchange {
         &mut self,
         account_id: AccountId,
         order_type: OrderType,
+        pair: AssetIdPair,
         side: Side,
         volume: Volume,
         price: Price,
     ) -> Order {
-        let new_id = self.last_order_id + 1;
-        self.last_order_id = new_id;
+        let new_id = self.session_orders.len();
+        let status = OrderExecutionStatus::AwaitingFill;
         let result = Order {
             id: new_id,
             account_id,
             order_type,
+            pair,
             side,
             volume,
             price,
+            status,
         };
-        self.orders.push(result);
+        // self.session_orders.push(result);
         result
     }
 
@@ -176,39 +224,58 @@ impl Exchange {
 
     pub fn insert_order(
         &mut self,
-        asset_pair: AssetIdPair,
         account_id: AccountId,
         order_type: OrderType,
+        asset_pair: AssetIdPair,
         side: Side,
         volume: Volume,
         price: Price,
     ) -> Result<OrderExecutionStatus, OrderExecutionError> {
         // Check order volume
-        if volume <= 0 {
-            return Err(OrderExecutionError::IllegalParameters);
-        }
-        // Check that market exists
-        if !self.markets.contains_key(&asset_pair) {
-            return Err(OrderExecutionError::MarketDoesNotExist);
-        }
+        // if volume <= 0 {
+        //     return Err(OrderExecutionError::IllegalParameters);
+        // }
 
         // Execute order
-        let order = self.create_order(account_id, order_type, side, volume, price);
-        let market = self.markets.get_mut(&asset_pair).unwrap();
-        let execution_effects = market.execute_order(order)?;
+        let order = self.create_order(account_id, order_type, asset_pair, side, volume, price);
+        let market = self
+            .markets
+            .get_mut(&asset_pair)
+            .ok_or(OrderExecutionError::MarketDoesNotExist)?;
+        self.order_change_buf.clear();
+        let execution_effects = market.execute_order(order, &mut self.order_change_buf)?;
 
         let num_accounts = self.accounts.len();
         let balances = &mut self.balances;
-        for balance_transfer in &execution_effects.balance_transfers {
-            let asset_id = balance_transfer.asset_id;
-            let from = balance_transfer.from_id;
-            let to = balance_transfer.to_id;
+        for order_change in &self.order_change_buf {
+            // let change_in_primary = Balance::from(order_change.change);
+            // let order_id = order_change.id;
 
-            let from_balance = balances.get_mut(asset_id, from, num_accounts).unwrap();
-            *from_balance -= balance_transfer.change;
+            // let order = self.session_orders.get_mut(order_id).unwrap();
+            // // order.volume -= change;
+            // let asset_pair = order.pair;
+            // let asset_id = match order.side {
+            //     Side::Ask => asset_pair.primary,
+            //     Side::Bid => asset_pair.secondary
+            // };
+            // let change_in_asset = match order.side {
+            //     Side::Ask => change_in_primary,
+            //     Side::Bid => change_in_primary * order.price
+            // };
+            // let balance = balances.get_mut(asset_id, account_id, num_accounts).unwrap();
+            // *balance -= change_in_asset;
 
-            let to_balance = balances.get_mut(asset_id, to, num_accounts).unwrap();
-            *to_balance += balance_transfer.change;
+            // let asset_id = order.pair;
+            // let from = balance_transfer.from_id;
+            // let to = balance_transfer.to_id;
+
+            // let from_balance = balances.get_mut(asset_id, from, num_accounts).unwrap();
+            // *from_balance -= balance_transfer.change;
+
+            // let to_balance = balances.get_mut(asset_id, to, num_accounts).unwrap();
+            // *to_balance += balance_transfer.change;
+            // let primary_change = Balance::from(diff);
+            // let secondary_change = price * (diff as i64);
         }
 
         Ok(execution_effects.status)
