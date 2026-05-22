@@ -20,7 +20,7 @@ fn insertions_benchmark(c: &mut Criterion) {
     let mut exchange = Exchange::new();
     let N = 10;
     for _ in 0..N {
-        exchange.add_account();
+        exchange.create_account();
     }
 
     let EUR_id = exchange.add_asset("Euro", "EUR");

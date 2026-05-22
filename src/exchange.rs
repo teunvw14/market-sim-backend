@@ -1,10 +1,12 @@
 use core::num;
 use std::error::Error;
 use std::hash::Hash;
+use std::sync::Mutex;
 use std::{collections::HashMap, fmt::Display};
 
 use fixed::traits::Fixed;
 use thiserror::Error;
+use tokio::task::JoinHandle;
 
 use crate::asset::*;
 use crate::market::*;
@@ -63,7 +65,7 @@ impl BalanceBook {
         }
     }
 
-    pub fn add_account(&mut self, num_accounts: usize, num_assets: usize) {
+    pub fn create_account(&mut self, num_accounts: usize, num_assets: usize) {
         for i in 0..num_assets {
             let index = (i + 1) * num_accounts + i;
             self.inner.insert(index, Balance::ZERO);
@@ -124,6 +126,8 @@ pub struct Exchange {
     markets: Markets,
     session_orders: Vec<Order>,
     order_change_buf: Vec<OrderChange>,
+    account_manager: JoinHandle<()>,
+    order_manager: JoinHandle<()>,
 }
 
 #[derive(Debug)]
@@ -162,9 +166,10 @@ impl Exchange {
         self.traded_assets.remove(&asset_id);
     }
 
-    pub fn add_account(&mut self) -> AccountId {
-        let new_id = self.accounts.len() as u32;
-        self.accounts.insert(new_id, Account { id: new_id });
+    pub fn create_account(&mut self) -> AccountId {
+        let accounts = &mut self.accounts;
+        let new_id = accounts.len() as u32;
+        accounts.insert(new_id, Account { id: new_id });
         new_id
     }
 
@@ -186,6 +191,10 @@ impl Exchange {
         };
         self.markets.add_market(Market::new(&asset_pair));
         Ok(())
+    }
+
+    pub fn get_market(&self, asset_pair: &AssetIdPair) -> Option<&Market> {
+        self.markets.get(asset_pair)
     }
 
     pub fn get_last_price(&self, asset_pair: AssetIdPair) -> Option<Price> {
@@ -214,13 +223,13 @@ impl Exchange {
             price,
             status,
         };
-        // self.session_orders.push(result);
+        self.session_orders.push(result);
         result
     }
 
-    pub fn get_account_mut(&mut self, id: &AccountId) -> Option<&mut Account> {
-        self.accounts.get_mut(id)
-    }
+    // pub fn get_account_mut(&mut self, id: &AccountId) -> Option<&mut Account> {
+    //     self.accounts.get_mut(id)
+    // }
 
     pub fn insert_order(
         &mut self,
@@ -245,8 +254,8 @@ impl Exchange {
         self.order_change_buf.clear();
         let execution_effects = market.execute_order(order, &mut self.order_change_buf)?;
 
-        let num_accounts = self.accounts.len();
-        let balances = &mut self.balances;
+        // let num_accounts = self.accounts.len();
+        // let balances = &mut self.balances;
         for order_change in &self.order_change_buf {
             // let change_in_primary = Balance::from(order_change.change);
             // let order_id = order_change.id;

@@ -1,4 +1,5 @@
 use fixed::types::*;
+use tokio::sync::mpsc;
 
 use std::cmp::min;
 use std::collections::{BTreeMap, VecDeque};
@@ -19,6 +20,10 @@ pub struct Market {
 }
 
 impl Market {
+    pub fn run(mut self, mut rx: mpsc::Receiver<>) {
+
+    }
+
     pub fn new(asset_pair: &AssetIdPair) -> Self {
         Market {
             asset_pair: asset_pair.clone(),
@@ -49,6 +54,17 @@ impl Market {
         }
 
         execution_result
+    }
+
+    pub fn get_orderbook_size(&self) -> usize {
+        let mut result = 0;
+        for (_k, v) in &self.orderbook.bids {
+            result += v.len();
+        }
+        for (_k, v) in &self.orderbook.asks {
+            result += v.len();
+        }
+        result
     }
 }
 
