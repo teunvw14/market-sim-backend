@@ -24,7 +24,7 @@ impl From<Order> for OrderbookEntry {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Orderbook {
     pub bids: BTreeMap<Price, VecDeque<OrderbookEntry>>,
     pub asks: BTreeMap<Price, VecDeque<OrderbookEntry>>,
@@ -36,6 +36,20 @@ pub enum OrderExecutionError {
     IllegalParameters, // should never occur in practice, should be caught in frontend
     OrderKilled,
     InadequateVolume,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum OrderCancellationError {
+    /// The specified order does not exist.
+    OrderDoesNotExist,
+    /// User was not the one who created the order.
+    NotAuthorized,
+    /// The specified order was already filled 
+    AlreadyFilled,
+    /// Market that the Order is registered for (no longer) exists. Should never happen in practice.
+    MarketDoesNotExist,
+    /// Order cannot be cancelled (because it is not a limit order)
+    NotCancellable
 }
 
 /// A change in the remaining volume of order with id `id`. Change should always
@@ -61,7 +75,8 @@ pub enum OrderExecutionStatus {
     Cancelled,
 }
 
-pub type OrderExecutionResult = Result<OrderExecutionEffects, OrderExecutionError>;
+pub type OrderInsertionResult = Result<OrderExecutionEffects, OrderExecutionError>;
+pub type OrderCancellationResult = Result<(), OrderCancellationError>;
 
 impl Orderbook {
     pub fn new() -> Orderbook {
@@ -104,36 +119,32 @@ impl Orderbook {
         }
     }
 
-    pub fn cancel_order(&mut self, order: Order) -> OrderExecutionResult {
-        let side = match order.side {
+    pub fn cancel_order(&mut self, cancellation: OrderCancellation) -> OrderCancellationResult {
+        let side = match cancellation.side {
             Side::Ask => &mut self.asks,
             Side::Bid => &mut self.bids,
         };
-        let price = order.price;
-        let mut remaining_volume: Volume = 0;
+        let price = cancellation.price;
         if let Some(orders) = side.get_mut(&price) {
             let mut index = None;
             for (i, order_at_price) in orders.iter().enumerate() {
-                if order_at_price.order_id == order.id {
-                    remaining_volume = order_at_price.remaining_volume;
+                if order_at_price.order_id == cancellation.order_id {
                     index = Some(i);
                 }
             }
             if index.is_some() {
                 orders.remove(index.unwrap());
+                return Ok(())
             }
         }
-        Ok(OrderExecutionEffects {
-            status: OrderExecutionStatus::Cancelled,
-            last_traded_price: None,
-        })
+        Err(OrderCancellationError::AlreadyFilled)
     }
 
     pub fn insert_order_limit(
         &mut self,
         mut order: Order,
         order_change_buf: &mut OrderChangeBuffer,
-    ) -> OrderExecutionResult {
+    ) -> OrderInsertionResult {
         let mut remaining = order.volume;
         let mut last_traded_price = None;
 
@@ -224,7 +235,7 @@ impl Orderbook {
         asset_pair: &AssetIdPair,
         order: Order,
         order_change_buf: &mut OrderChangeBuffer,
-    ) -> OrderExecutionResult {
+    ) -> OrderInsertionResult {
         unimplemented!();
     }
 
@@ -233,7 +244,7 @@ impl Orderbook {
         asset_pair: &AssetIdPair,
         order: Order,
         order_change_buf: &mut OrderChangeBuffer,
-    ) -> OrderExecutionResult {
+    ) -> OrderInsertionResult {
         unimplemented!();
         // let side_offers = match order.side {
         //     Side::Ask => &mut self.bids,

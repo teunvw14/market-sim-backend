@@ -12,7 +12,7 @@ use crate::order::*;
 use crate::orderbook::*;
 use crate::types::*;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Default)]
 pub struct Market {
     pub asset_pair: AssetIdPair,
     pub last_traded_price: Price,
@@ -20,9 +20,9 @@ pub struct Market {
 }
 
 impl Market {
-    pub fn run(mut self, mut rx: mpsc::Receiver<>) {
+    // pub fn run(mut self, mut rx: mpsc::Receiver<>) {
 
-    }
+    // }
 
     pub fn new(asset_pair: &AssetIdPair) -> Self {
         Market {
@@ -32,11 +32,11 @@ impl Market {
         }
     }
 
-    pub fn execute_order(
+    pub fn insert_order(
         &mut self,
         order: Order,
         order_change_buf: &mut Vec<OrderChange>,
-    ) -> OrderExecutionResult {
+    ) -> OrderInsertionResult {
         let orderbook = &mut self.orderbook;
         let execution_result = match order.order_type {
             OrderType::Limit => orderbook.insert_order_limit(order, order_change_buf),
@@ -54,6 +54,12 @@ impl Market {
         }
 
         execution_result
+    }
+
+    pub fn cancel_order<T: Into<OrderCancellation>>(&mut self, cancellation: T) -> OrderCancellationResult {
+        let cancellation = cancellation.into();
+        let orderbook = &mut self.orderbook;
+        orderbook.cancel_order(cancellation)
     }
 
     pub fn get_orderbook_size(&self) -> usize {

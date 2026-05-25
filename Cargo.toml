@@ -2,6 +2,10 @@
 name = "backend"
 version = "0.1.0"
 edition = "2024"
+default-run = "server"
+
+[dev-dependencies]
+criterion = { version = "0.8.2", features = ["html_reports"] }
 
 [dependencies]
 fixed = "1.31.0"
@@ -9,6 +13,14 @@ rand = "0.10.1"
 thiserror = "2.0.18"
 tokio = { version = "1.51.0", features = ["full"] }
 num-format = "0.4.4"
+
+[[bin]]
+name = "bench_insert_orders_manual"
+path = "benches/insert_orders_manual.rs"
+
+[[bench]]
+name = "insert_order"
+harness = false
 
 [profile.profiling]
 opt-level = 3

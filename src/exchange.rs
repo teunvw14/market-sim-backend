@@ -24,10 +24,11 @@ pub enum MarketCreationError {
     AssetNotTraded { asset: AssetId },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct BalanceBook {
     inner: Vec<Balance>,
 }
+
 impl BalanceBook {
     pub fn new() -> Self {
         Self { inner: Vec::new() }
@@ -74,7 +75,7 @@ impl BalanceBook {
 }
 
 /// Thin wrapper around a vec for faster lookups of key-existence
-#[derive(Debug)]
+#[derive(Debug, Clone, Default)]
 pub struct Markets {
     pub keys: Vec<AssetIdPair>,
     pub inner: Vec<Market>,
@@ -118,7 +119,7 @@ impl Markets {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Exchange {
     accounts: HashMap<AccountId, Account>,
     balances: BalanceBook,
@@ -126,8 +127,6 @@ pub struct Exchange {
     markets: Markets,
     session_orders: Vec<Order>,
     order_change_buf: Vec<OrderChange>,
-    account_manager: JoinHandle<()>,
-    order_manager: JoinHandle<()>,
 }
 
 #[derive(Debug)]
@@ -193,8 +192,20 @@ impl Exchange {
         Ok(())
     }
 
+    pub fn get_order(&self, order_id: &OrderId) -> Option<&Order> {
+        self.session_orders.get(*order_id)
+    }
+
+    pub fn get_order_mut(&mut self, order_id: &OrderId) -> Option<&mut Order> {
+        self.session_orders.get_mut(*order_id)
+    }
+
     pub fn get_market(&self, asset_pair: &AssetIdPair) -> Option<&Market> {
         self.markets.get(asset_pair)
+    }
+
+    fn get_market_mut(&mut self, asset_pair: &AssetIdPair) -> Option<&mut Market> {
+        self.markets.get_mut(asset_pair)
     }
 
     pub fn get_last_price(&self, asset_pair: AssetIdPair) -> Option<Price> {
@@ -226,7 +237,6 @@ impl Exchange {
         self.session_orders.push(result);
         result
     }
-
     // pub fn get_account_mut(&mut self, id: &AccountId) -> Option<&mut Account> {
     //     self.accounts.get_mut(id)
     // }
@@ -252,7 +262,7 @@ impl Exchange {
             .get_mut(&asset_pair)
             .ok_or(OrderExecutionError::MarketDoesNotExist)?;
         self.order_change_buf.clear();
-        let execution_effects = market.execute_order(order, &mut self.order_change_buf)?;
+        let execution_effects = market.insert_order(order, &mut self.order_change_buf)?;
 
         // let num_accounts = self.accounts.len();
         // let balances = &mut self.balances;
@@ -288,5 +298,28 @@ impl Exchange {
         }
 
         Ok(execution_effects.status)
+    }
+
+    pub fn cancel_order(&mut self, order_id: OrderId) -> OrderCancellationResult {
+        let order_ref = self.session_orders.get_mut(order_id)
+            .ok_or(OrderCancellationError::OrderDoesNotExist)?;
+        
+        // Any other limit type is not cancellable
+        if order_ref.order_type != OrderType::Limit {
+            return Err(OrderCancellationError::NotCancellable)
+        }
+        
+        // Copy order
+        let order = order_ref.clone();
+        
+        let pair = order.pair;
+        let market = self.markets.get_mut(&pair)
+        .ok_or(OrderCancellationError::MarketDoesNotExist)?;
+    
+        market.cancel_order(order)?;
+    
+        order_ref.status = OrderExecutionStatus::Cancelled;
+
+        Ok(())
     }
 }

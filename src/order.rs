@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::{asset::*, orderbook::OrderExecutionStatus, types::*};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OrderType {
     Limit,
     FillOrKill,
@@ -17,13 +17,21 @@ pub enum Side {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Order {
-    pub id: OrderId,
+    /// The id of the order as assigned by the exchange.
+    pub id:OrderId,
+    /// The id of the account that created the order.
     pub account_id: AccountId,
+    /// The type of the order (limit, market, etc.). Field is `order_type` because `type` is a reserved keyword.
     pub order_type: OrderType,
+    /// The pair that the order should be executed on.
     pub pair: AssetIdPair,
+    /// Side of the order (Bid / Ask).
     pub side: Side,
+    /// Volume of the order in whole units.
     pub volume: Volume,
+    /// Price of the order.
     pub price: Price,
+    /// Order status.
     pub status: OrderExecutionStatus,
 }
 
@@ -39,5 +47,23 @@ impl Display for Order {
             f,
             "Order {id} from account {acc_id}: {side:?} {volume} at {price} ({ot:?})"
         )
+    }
+}
+
+/// OderCancellation encapsulates the information needed to efficiently remove an order
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct OrderCancellation {
+    pub order_id: OrderId,
+    pub side: Side,
+    pub price: Price
+}
+
+impl From<Order> for OrderCancellation {
+    fn from(order: Order) -> Self {
+        Self {
+            order_id: order.id,
+            side: order.side,
+            price: order.price,
+        }
     }
 }
