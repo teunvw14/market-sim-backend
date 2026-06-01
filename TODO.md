@@ -7,3 +7,5 @@
 - Research ring-buffer
 - Investigate using a different data structure (than a map) for the Limit Order Book (like simply a vector, maybe even with bids and asks adjacent, and use linear search)
 - Fix high-latency order-insertions
+- add OrderInsert type which elides the status field present on Order
+- Create exchange config type or exchange builder for configurability

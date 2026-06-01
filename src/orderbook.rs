@@ -31,10 +31,14 @@ pub struct Orderbook {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum OrderExecutionError {
+pub enum OrderInsertionError {
+    /// The specified market does not exist.
     MarketDoesNotExist,
-    IllegalParameters, // should never occur in practice, should be caught in frontend
+    /// The parameters on the order are illegal. Illegal parameters should be caught by the calling frontend if possible.
+    IllegalParameters,
+    /// The order was killed (only for Fill-or-Kill orders).
     OrderKilled,
+    /// There was not enough volume to fill the order (only for market or Fill-or-Kill orders).
     InadequateVolume,
 }
 
@@ -60,10 +64,10 @@ pub struct OrderChange {
     pub change: Volume,
 }
 
-type OrderChangeBuffer = Vec<OrderChange>;
+pub type OrderChangeBuffer = Vec<OrderChange>;
 
 pub struct OrderExecutionEffects {
-    pub status: OrderExecutionStatus,
+    pub order_changes: OrderChangeBuffer,
     pub last_traded_price: Option<Price>,
 }
 
@@ -72,10 +76,11 @@ pub enum OrderExecutionStatus {
     AwaitingFill,
     PartialFill,
     Filled,
+    Killed,
     Cancelled,
 }
 
-pub type OrderInsertionResult = Result<OrderExecutionEffects, OrderExecutionError>;
+pub type OrderInsertionResult = Result<OrderExecutionEffects, OrderInsertionError>;
 pub type OrderCancellationResult = Result<(), OrderCancellationError>;
 
 impl Orderbook {
@@ -143,10 +148,10 @@ impl Orderbook {
     pub fn insert_order_limit(
         &mut self,
         mut order: Order,
-        order_change_buf: &mut OrderChangeBuffer,
     ) -> OrderInsertionResult {
         let mut remaining = order.volume;
         let mut last_traded_price = None;
+        let mut order_change_buf = Vec::new();
 
         let prices = match order.side {
             Side::Ask => &mut self.bids,
@@ -169,6 +174,7 @@ impl Orderbook {
             if bid_price_too_high || ask_price_too_low {
                 break;
             }
+
             while let Some(open_order) = open_orders.iter_mut().next() {
                 let diff = min(remaining, open_order.remaining_volume);
                 open_order.remaining_volume -= diff;
@@ -211,41 +217,30 @@ impl Orderbook {
             id: order.id,
             change: volume_filled,
         });
-
-        let result = if remaining > 0 {
+ 
             // Enter limit order into orderbook
-            order.volume = remaining;
-            self.insert_limit_order_no_matching(order);
-            Ok(OrderExecutionEffects {
-                status: OrderExecutionStatus::PartialFill,
-                last_traded_price,
-            })
-        } else {
-            Ok(OrderExecutionEffects {
-                status: OrderExecutionStatus::Filled,
-                last_traded_price,
-            })
-        };
-        // self.clean_orderbook();
-        result
+        order.volume = remaining;
+        self.insert_limit_order_no_matching(order);
+        Ok(OrderExecutionEffects {
+            order_changes: order_change_buf,
+            last_traded_price,
+        })
     }
 
-    pub fn insert_order_fill_or_kill(
-        &mut self,
-        asset_pair: &AssetIdPair,
-        order: Order,
-        order_change_buf: &mut OrderChangeBuffer,
-    ) -> OrderInsertionResult {
-        unimplemented!();
-    }
+    // pub fn insert_order_fill_or_kill(
+    //     &mut self,
+    //     asset_pair: &AssetIdPair,
+    //     order: Order,
+    // ) -> OrderInsertionResult {
+    //     unimplemented!();
+    // }
 
-    pub fn insert_order_market(
-        &mut self,
-        asset_pair: &AssetIdPair,
-        order: Order,
-        order_change_buf: &mut OrderChangeBuffer,
-    ) -> OrderInsertionResult {
-        unimplemented!();
+    // pub fn insert_order_market(
+    //     &mut self,
+    //     asset_pair: &AssetIdPair,
+    //     order: Order,
+    // ) -> OrderInsertionResult {
+    //     unimplemented!();
         // let side_offers = match order.side {
         //     Side::Ask => &mut self.bids,
         //     Side::Bid => &mut self.asks,
@@ -265,7 +260,7 @@ impl Orderbook {
         //     }
         // }
         // if available_volume < order.volume {
-        //     return Err(OrderExecutionError::InadequateVolume);
+        //     return Err(OrderInsertionError::InadequateVolume);
         // }
 
         // let (taker_increasing_asset_id, taker_decreasing_asset_id) = match order.side {
@@ -321,5 +316,5 @@ impl Orderbook {
         //     status: OrderExecutionStatus::Filled,
         //     balance_transfers,
         // })
-    }
+    // }
 }

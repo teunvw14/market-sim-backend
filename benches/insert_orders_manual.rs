@@ -13,18 +13,35 @@ use backend::{
     types::*,
 };
 
-fn main() {
+async fn send_orders(exchange: &Exchange, account_id: AccountId, pair: AssetIdPair, duration: Duration) {
+    let mut count = 0;
+    loop {
+        count += 1;
+
+        // Random price between 0.5 and 1.5
+        let price = Price::from(ORDER_PRICES[count % ORDER_PRICES.len()]);
+
+        // Alternate accounts to avoid self-trades
+        let side = if count % 2 == 0 {
+            Side::Bid
+        } else {
+            Side::Ask
+        };
+
+        let volume = VOLUMES[count % VOLUMES.len()];
+        // Ignore errors if desired, or handle them
+        let _result =
+            exchange.insert_order(account_id, OrderType::Limit, pair, side, volume, price);
+    }
+}
+
+#[tokio::main]
+async fn main() {
     // Bench params
-    let test_duration = Duration::from_secs(5);
+    let bench_duration = Duration::from_secs(5);
 
     // Init exchange
     let mut exchange = Exchange::new();
-
-    // Create some accounts to send orders from
-    let N = 10;
-    for _ in 0..N {
-        exchange.create_account();
-    }
 
     // Add assets and markets to exchange
     let JPY_id = exchange.add_asset("Japanese Yen", "JPY");
@@ -41,8 +58,18 @@ fn main() {
     };
     exchange.create_market(pair).unwrap();
 
-    // Show exchange state
-    println!("{exchange:?}");
+    // Create some accounts to send orders from
+    let concurrency = 10;
+    // let mut handles = Vec::new();
+    let mut account_ids = Vec::new();
+    for _ in 0..concurrency {
+        let account_id = exchange.create_account();
+        account_ids.push(account_id);
+    }
+    // for account_id in account_ids {
+    //     let handle = tokio::task::spawn(send_orders(&exchange, account_id, pair, bench_duration));
+    //     handles.push(handle);
+    // }
 
     // Place a bunch of orders
     let mut order_id: usize = 0;
@@ -50,46 +77,13 @@ fn main() {
     let start = Instant::now();
     let format = CustomFormat::builder().separator(" ").build().unwrap();
 
-    loop {
-        order_id += 1;
+    send_orders(&exchange, 1, pair, bench_duration).await;
 
-        // Random price between 0.5 and 1.5
-        let price = Price::from(ORDER_PRICES[order_id % ORDER_PRICES.len()]);
-
-        // Alternate accounts to avoid self-trades
-        let account_id = (order_id % N) as AccountId;
-        let side = if order_id % 2 == 0 {
-            Side::Bid
-        } else {
-            Side::Ask
-        };
-
-        let volume = VOLUMES[order_id % VOLUMES.len()];
-        // Ignore errors if desired, or handle them
-        let _result =
-            exchange.insert_order(account_id, OrderType::Limit, pair, side, volume, price);
-
-        // let last_price_opt = exchange.get_last_price(pair);
-        // if let Some(last_price) = last_price_opt {
-        //     print!("\rLast traded price {last_price:?}                         ")
-        // }
-        if order_id % 5_000_000 == 0 {
-            let elapsed = start.elapsed().as_secs_f64();
-            let ops_per_sec = order_id as f64 / elapsed;
-
-            let count = order_id.to_formatted_string(&format);
-            let ops_per_sec = (ops_per_sec.floor() as u64).to_formatted_string(&format);
-
-            print!("\rProcessed {count} orders in {elapsed:.2} seconds | {ops_per_sec} orders/s");
-            std::io::stdout().flush().unwrap();
-            if start.elapsed() > test_duration {
-                break;
-            }
-        }
-    }
-
+    // for handle in handles {
+    //     handle.await.unwrap();
+    // }
     println!(); // Print newline
-    let orderbook_size = exchange.get_market(&pair).unwrap().get_orderbook_size();
-    println!("Orderbook size: {orderbook_size}");
+    // let orderbook_size = exchange.get_market(&pair).unwrap().get_orderbook_size();
+    // println!("Orderbook size: {orderbook_size}");
     // println!("{exchange:?}");
 }

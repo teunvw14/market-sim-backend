@@ -1,16 +1,11 @@
-use fixed::types::*;
-use tokio::sync::mpsc;
-
-use std::cmp::min;
-use std::collections::{BTreeMap, VecDeque};
-use std::error::Error;
 use std::fmt::Display;
-use std::mem;
+use tokio::sync::mpsc;
 
 use crate::asset::*;
 use crate::order::*;
 use crate::orderbook::*;
 use crate::types::*;
+
 
 #[derive(Debug, Clone, Default)]
 pub struct Market {
@@ -20,13 +15,9 @@ pub struct Market {
 }
 
 impl Market {
-    // pub fn run(mut self, mut rx: mpsc::Receiver<>) {
-
-    // }
-
-    pub fn new(asset_pair: &AssetIdPair) -> Self {
+    pub fn new(asset_pair: AssetIdPair) -> Self {
         Market {
-            asset_pair: asset_pair.clone(),
+            asset_pair: asset_pair,
             last_traded_price: Price::ZERO,
             orderbook: Orderbook::new(),
         }
@@ -35,16 +26,17 @@ impl Market {
     pub fn insert_order(
         &mut self,
         order: Order,
-        order_change_buf: &mut Vec<OrderChange>,
     ) -> OrderInsertionResult {
         let orderbook = &mut self.orderbook;
         let execution_result = match order.order_type {
-            OrderType::Limit => orderbook.insert_order_limit(order, order_change_buf),
+            OrderType::Limit => orderbook.insert_order_limit(order),
             OrderType::FillOrKill => {
-                orderbook.insert_order_fill_or_kill(&self.asset_pair, order, order_change_buf)
+                unimplemented!();
+                // orderbook.insert_order_fill_or_kill(&self.asset_pair, order, order_change_buf)
             }
             OrderType::Market => {
-                orderbook.insert_order_market(&self.asset_pair, order, order_change_buf)
+                unimplemented!();
+                // orderbook.insert_order_market(&self.asset_pair, order, order_change_buf)
             }
         };
         if execution_result.is_ok() {

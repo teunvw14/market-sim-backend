@@ -16,7 +16,7 @@ Messages are (de)serialized with [MessagePack](https://msgpack.org/).
 
 ### CreateAccount -> Result<Id>
 
-Creates an account on the exchange, creating balances. Returns `Ok(id)` where `id` is the account id (which is required for any other request).
+Creates an account on the exchange. Returns `Ok(id)` where `id` is the account id (which is required for most requests).
 
 ### GetAssets -> Vec<Asset>
 

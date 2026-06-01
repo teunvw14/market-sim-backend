@@ -1,6 +1,8 @@
-use std::fmt::Display;
+use std::{collections::VecDeque, fmt::Display};
 
-use crate::{asset::*, orderbook::OrderExecutionStatus, types::*};
+use tokio::sync::oneshot;
+
+use crate::{asset::*, orderbook::{OrderExecutionStatus, OrderInsertionResult}, types::*};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OrderType {
@@ -18,7 +20,7 @@ pub enum Side {
 #[derive(Debug, Clone, Copy)]
 pub struct Order {
     /// The id of the order as assigned by the exchange.
-    pub id:OrderId,
+    pub id: OrderId,
     /// The id of the account that created the order.
     pub account_id: AccountId,
     /// The type of the order (limit, market, etc.). Field is `order_type` because `type` is a reserved keyword.
@@ -35,6 +37,7 @@ pub struct Order {
     pub status: OrderExecutionStatus,
 }
 
+
 impl Display for Order {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let id = self.id;
@@ -48,6 +51,14 @@ impl Display for Order {
             "Order {id} from account {acc_id}: {side:?} {volume} at {price} ({ot:?})"
         )
     }
+}
+
+pub type OrderBuffer = VecDeque<Order>;
+pub type OrderInsertionResultBuffer = VecDeque<OrderInsertionResult>;
+
+pub struct OrderBufferWithReplyChannel {
+    pub order_buf: OrderBuffer,
+    pub tx_reply: oneshot::Sender<OrderInsertionResultBuffer>
 }
 
 /// OderCancellation encapsulates the information needed to efficiently remove an order
