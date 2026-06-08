@@ -13,7 +13,12 @@ use backend::{
     types::*,
 };
 
-async fn send_orders(exchange: &Exchange, account_id: AccountId, pair: AssetIdPair, duration: Duration) {
+async fn send_orders(
+    exchange: &Exchange,
+    account_id: AccountId,
+    pair: AssetIdPair,
+    duration: Duration,
+) {
     let mut count = 0;
     let start = Instant::now();
     let mut elapsed = Duration::ZERO;
@@ -24,16 +29,13 @@ async fn send_orders(exchange: &Exchange, account_id: AccountId, pair: AssetIdPa
         let price = Price::from(ORDER_PRICES[count % ORDER_PRICES.len()]);
 
         // Alternate accounts to avoid self-trades
-        let side = if count % 2 == 0 {
-            Side::Bid
-        } else {
-            Side::Ask
-        };
+        let side = if count % 2 == 0 { Side::Bid } else { Side::Ask };
 
         let volume = VOLUMES[count % VOLUMES.len()];
         // Ignore errors if desired, or handle them
-        let _result =
-            exchange.insert_order(account_id, OrderType::Limit, pair, side, volume, price).await;
+        let _result = exchange
+            .insert_order(account_id, OrderType::Limit, pair, side, volume, price)
+            .await;
 
         if count % 100_000 == 0 {
             elapsed = start.elapsed();

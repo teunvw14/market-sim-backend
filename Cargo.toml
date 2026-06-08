@@ -2,7 +2,7 @@
 name = "backend"
 version = "0.1.0"
 edition = "2024"
-default-run = "exchange_sim_backend"
+default-run = "exchange_server"
 
 [dev-dependencies]
 criterion = { version = "0.8.2", features = ["html_reports"] }

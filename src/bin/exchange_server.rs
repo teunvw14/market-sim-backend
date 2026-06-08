@@ -1,4 +1,7 @@
-use std::{net::SocketAddr, time::{Duration, Instant}};
+use std::{
+    net::SocketAddr,
+    time::{Duration, Instant},
+};
 use tokio::net::{TcpListener, TcpStream};
 
 use num_format::{CustomFormat, ToFormattedString};
@@ -27,16 +30,19 @@ async fn test_main() {
     let price: Price = Price::lit("0.85");
     exchange
         .insert_order(acc_id_1, OrderType::Limit, pair, Side::Ask, 5, price)
-        .await.unwrap();
+        .await
+        .unwrap();
     let price: Price = Price::lit("0.86");
     exchange
         .insert_order(acc_id_1, OrderType::Limit, pair, Side::Ask, 5, price)
-        .await.unwrap();
+        .await
+        .unwrap();
     println!("{exchange:#?}");
     let price: Price = Price::lit("0.9");
     exchange
         .insert_order(acc_id_2, OrderType::Limit, pair, Side::Bid, 20, price)
-        .await.unwrap();
+        .await
+        .unwrap();
 
     println!("");
     println!("{exchange:#?}");
@@ -70,7 +76,6 @@ async fn test_main() {
 
 #[tokio::main]
 async fn main() {
-    
     // let listener = TcpListener::bind("127.0.0.1:5555").await.unwrap();
     // loop {
     //     if let Ok((stream, addr)) = listener.accept().await {

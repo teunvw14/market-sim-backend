@@ -18,6 +18,7 @@ Latency: 100 ns
 + Simpler design: exchange doesn't need multithreaded architecture
 + Throughput scales with cores/num markets, since locks are at orderbook level (i.e. one lock per market)
 + Tokio runtime: speed + no overhead from managing both the runtime *and* `std::threads`. 
+\- May not scale well
 \- Contention on locks will be maximal, large added latency.
 
 **Sync Multithreaded Exchange, Give Every Connection `mpsc::Sender`s for all MarketHandlers**

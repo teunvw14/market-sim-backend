@@ -14,15 +14,15 @@ pub struct OrderbookEntry {
     pub remaining_volume: Volume,
 }
 
-impl From<Order> for OrderbookEntry {
-    fn from(order: Order) -> Self {
-        OrderbookEntry {
-            order_id: order.id,
-            account_id: order.account_id,
-            remaining_volume: order.volume,
-        }
-    }
-}
+// impl From<OrderInsertion> for OrderbookEntry {
+//     fn from(order: OrderInsertion) -> Self {
+//         OrderbookEntry {
+//             order_id: order.id,
+//             account_id: order.account_id,
+//             remaining_volume: order.volume,
+//         }
+//     }
+// }
 
 #[derive(Debug, Clone, Default)]
 pub struct Orderbook {
@@ -48,12 +48,12 @@ pub enum OrderCancellationError {
     OrderDoesNotExist,
     /// User was not the one who created the order.
     NotAuthorized,
-    /// The specified order was already filled 
+    /// The specified order was already filled
     AlreadyFilled,
     /// Market that the Order is registered for (no longer) exists. Should never happen in practice.
     MarketDoesNotExist,
     /// Order cannot be cancelled (because it is not a limit order)
-    NotCancellable
+    NotCancellable,
 }
 
 /// A change in the remaining volume of order with id `id`. Change should always
@@ -66,9 +66,11 @@ pub struct OrderChange {
 
 pub type OrderChangeBuffer = Vec<OrderChange>;
 
-pub struct OrderExecutionEffects {
-    pub order_changes: OrderChangeBuffer,
-    pub last_traded_price: Option<Price>,
+pub struct OrderInsertionEffects {
+    // The id assigned to the order
+    pub id: usize,
+    pub status: OrderExecutionStatus,
+    pub last_traded_price: Option<Price>
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -80,7 +82,7 @@ pub enum OrderExecutionStatus {
     Cancelled,
 }
 
-pub type OrderInsertionResult = Result<OrderExecutionEffects, OrderInsertionError>;
+pub type OrderInsertionResult = Result<OrderInsertionEffects, OrderInsertionError>;
 pub type OrderCancellationResult = Result<(), OrderCancellationError>;
 
 impl Orderbook {
@@ -105,7 +107,7 @@ impl Orderbook {
         Some(first_order)
     }
 
-    pub fn insert_limit_order_no_matching(&mut self, order: Order) {
+    pub fn insert_limit_order_no_matching(&mut self, order: OrderInsertion) {
         let price = order.price;
         let book_side = match order.side {
             Side::Ask => &mut self.asks,
@@ -139,16 +141,13 @@ impl Orderbook {
             }
             if index.is_some() {
                 orders.remove(index.unwrap());
-                return Ok(())
+                return Ok(());
             }
         }
         Err(OrderCancellationError::AlreadyFilled)
     }
 
-    pub fn insert_order_limit(
-        &mut self,
-        mut order: Order,
-    ) -> OrderInsertionResult {
+    pub fn insert_order_limit(&mut self, mut order: OrderInsertion) -> OrderInsertionResult {
         let mut remaining = order.volume;
         let mut last_traded_price = None;
         let mut order_change_buf = Vec::new();
@@ -217,11 +216,11 @@ impl Orderbook {
             id: order.id,
             change: volume_filled,
         });
- 
-            // Enter limit order into orderbook
+
+        // Enter limit order into orderbook
         order.volume = remaining;
         self.insert_limit_order_no_matching(order);
-        Ok(OrderExecutionEffects {
+        Ok(OrderInsertionEffects {
             order_changes: order_change_buf,
             last_traded_price,
         })
@@ -241,80 +240,80 @@ impl Orderbook {
     //     order: Order,
     // ) -> OrderInsertionResult {
     //     unimplemented!();
-        // let side_offers = match order.side {
-        //     Side::Ask => &mut self.bids,
-        //     Side::Bid => &mut self.asks,
-        // };
+    // let side_offers = match order.side {
+    //     Side::Ask => &mut self.bids,
+    //     Side::Bid => &mut self.asks,
+    // };
 
-        // // Check if order can be filled
-        // let mut available_volume = 0;
-        // for (_price, open_orders) in side_offers.iter() {
-        //     for open_order in open_orders {
-        //         available_volume += open_order.remaining_volume;
-        //         if available_volume > order.volume {
-        //             break;
-        //         }
-        //     }
-        //     if available_volume > order.volume {
-        //         break;
-        //     }
-        // }
-        // if available_volume < order.volume {
-        //     return Err(OrderInsertionError::InadequateVolume);
-        // }
+    // // Check if order can be filled
+    // let mut available_volume = 0;
+    // for (_price, open_orders) in side_offers.iter() {
+    //     for open_order in open_orders {
+    //         available_volume += open_order.remaining_volume;
+    //         if available_volume > order.volume {
+    //             break;
+    //         }
+    //     }
+    //     if available_volume > order.volume {
+    //         break;
+    //     }
+    // }
+    // if available_volume < order.volume {
+    //     return Err(OrderInsertionError::InadequateVolume);
+    // }
 
-        // let (taker_increasing_asset_id, taker_decreasing_asset_id) = match order.side {
-        //     Side::Ask => (asset_pair.secondary, asset_pair.primary),
-        //     Side::Bid => (asset_pair.primary, asset_pair.secondary),
-        // };
+    // let (taker_increasing_asset_id, taker_decreasing_asset_id) = match order.side {
+    //     Side::Ask => (asset_pair.secondary, asset_pair.primary),
+    //     Side::Bid => (asset_pair.primary, asset_pair.secondary),
+    // };
 
-        // // Fill order
-        // let mut remaining = order.volume;
-        // let mut balance_transfers = Vec::new();
-        // for (price, open_orders) in side_offers {
-        //     while let Some(mut open_order) = open_orders.pop_front() {
-        //         let diff = min(remaining, open_order.remaining_volume);
-        //         open_order.remaining_volume -= diff;
-        //         remaining -= diff;
+    // // Fill order
+    // let mut remaining = order.volume;
+    // let mut balance_transfers = Vec::new();
+    // for (price, open_orders) in side_offers {
+    //     while let Some(mut open_order) = open_orders.pop_front() {
+    //         let diff = min(remaining, open_order.remaining_volume);
+    //         open_order.remaining_volume -= diff;
+    //         remaining -= diff;
 
-        //         let primary_change = Balance::from(diff);
-        //         let secondary_change = price * (diff as i128);
-        //         let (change_decr, change_incr) = match order.side {
-        //             Side::Bid => (secondary_change, primary_change),
-        //             Side::Ask => (primary_change, secondary_change),
-        //         };
-        //         // First asset swap
-        //         balance_transfers.push(BalanceTransfer {
-        //             from_id: order.account_id,
-        //             to_id: open_order.original_order.account_id,
-        //             asset_id: taker_decreasing_asset_id,
-        //             change: change_decr,
-        //         });
+    //         let primary_change = Balance::from(diff);
+    //         let secondary_change = price * (diff as i128);
+    //         let (change_decr, change_incr) = match order.side {
+    //             Side::Bid => (secondary_change, primary_change),
+    //             Side::Ask => (primary_change, secondary_change),
+    //         };
+    //         // First asset swap
+    //         balance_transfers.push(BalanceTransfer {
+    //             from_id: order.account_id,
+    //             to_id: open_order.original_order.account_id,
+    //             asset_id: taker_decreasing_asset_id,
+    //             change: change_decr,
+    //         });
 
-        //         // Second asset swap
-        //         balance_transfers.push(BalanceTransfer {
-        //             from_id: open_order.original_order.account_id,
-        //             to_id: order.account_id,
-        //             asset_id: taker_increasing_asset_id,
-        //             change: change_incr,
-        //         });
+    //         // Second asset swap
+    //         balance_transfers.push(BalanceTransfer {
+    //             from_id: open_order.original_order.account_id,
+    //             to_id: order.account_id,
+    //             asset_id: taker_increasing_asset_id,
+    //             change: change_incr,
+    //         });
 
-        //         if open_order.remaining_volume > 0 {
-        //             open_orders.push_front(open_order);
-        //         }
+    //         if open_order.remaining_volume > 0 {
+    //             open_orders.push_front(open_order);
+    //         }
 
-        //         if remaining <= 0 {
-        //             break;
-        //         }
-        //     }
-        //     if remaining <= 0 {
-        //         break;
-        //     }
-        // }
+    //         if remaining <= 0 {
+    //             break;
+    //         }
+    //     }
+    //     if remaining <= 0 {
+    //         break;
+    //     }
+    // }
 
-        // Ok(OrderExecutionEffects {
-        //     status: OrderExecutionStatus::Filled,
-        //     balance_transfers,
-        // })
+    // Ok(OrderExecutionEffects {
+    //     status: OrderExecutionStatus::Filled,
+    //     balance_transfers,
+    // })
     // }
 }

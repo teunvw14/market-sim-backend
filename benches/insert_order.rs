@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use backend::statics::ORDER_PRICES;
-use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use criterion::async_executor::FuturesExecutor;
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 
 use backend::asset::*;
 use backend::exchange::*;

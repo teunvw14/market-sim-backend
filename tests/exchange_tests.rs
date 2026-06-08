@@ -1,9 +1,4 @@
-use backend::{
-    asset::*,
-    exchange::*,
-    order::*,
-    types::*,
-};
+use backend::{asset::*, exchange::*, order::*, types::*};
 
 /// Create a simple exchange with a single EUR/USD market and two accounts.
 #[cfg(test)]
@@ -23,7 +18,6 @@ fn exchange_eur_usd_market_2_accs() -> (Exchange, AssetIdPair, AccountId, Accoun
 
     (exchange, pair, id_1, id_2)
 }
-
 
 #[test]
 fn buy_sell() {
