@@ -2,13 +2,14 @@ use std::time::Duration;
 
 use backend::statics::ORDER_PRICES;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
+use criterion::async_executor::FuturesExecutor;
 
 use backend::asset::*;
 use backend::exchange::*;
 use backend::order::*;
 use backend::types::*;
 
-fn insert_order(c: &mut Criterion) {
+async fn insert_order(c: &mut Criterion) {
     let mut exchange = Exchange::new();
 
     let eur_id = exchange.add_asset("Euro", "EUR");
@@ -17,7 +18,7 @@ fn insert_order(c: &mut Criterion) {
         primary: eur_id,
         secondary: usd_id,
     };
-    exchange.create_market(pair).unwrap();
+    exchange.create_market(pair).await.unwrap();
 
     // Create 2 accounts
     for _ in 0..2 {
@@ -29,7 +30,7 @@ fn insert_order(c: &mut Criterion) {
 
     // Single insertions to measure latency
     c.bench_function("single_insertion_latency", |b| {
-        b.iter(|| {
+        b.to_async(FuturesExecutor).iter(|| async {
             order_id += 1;
             let side = if order_id % 2 == 0 {
                 Side::Bid

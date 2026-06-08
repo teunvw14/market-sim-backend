@@ -2,7 +2,7 @@
 name = "backend"
 version = "0.1.0"
 edition = "2024"
-default-run = "server"
+default-run = "exchange_sim_backend"
 
 [dev-dependencies]
 criterion = { version = "0.8.2", features = ["html_reports"] }
@@ -13,6 +13,7 @@ rand = "0.10.1"
 thiserror = "2.0.18"
 tokio = { version = "1.51.0", features = ["full"] }
 num-format = "0.4.4"
+criterion = { version = "0.8.2", features = ["async", "async_futures", "async_tokio"] }
 
 [[bin]]
 name = "bench_insert_orders_manual"

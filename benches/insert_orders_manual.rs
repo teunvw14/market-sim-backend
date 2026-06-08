@@ -15,7 +15,9 @@ use backend::{
 
 async fn send_orders(exchange: &Exchange, account_id: AccountId, pair: AssetIdPair, duration: Duration) {
     let mut count = 0;
-    loop {
+    let start = Instant::now();
+    let mut elapsed = Duration::ZERO;
+    while elapsed < duration {
         count += 1;
 
         // Random price between 0.5 and 1.5
@@ -31,8 +33,13 @@ async fn send_orders(exchange: &Exchange, account_id: AccountId, pair: AssetIdPa
         let volume = VOLUMES[count % VOLUMES.len()];
         // Ignore errors if desired, or handle them
         let _result =
-            exchange.insert_order(account_id, OrderType::Limit, pair, side, volume, price);
+            exchange.insert_order(account_id, OrderType::Limit, pair, side, volume, price).await;
+
+        if count % 100_000 == 0 {
+            elapsed = start.elapsed();
+        }
     }
+    dbg!(count);
 }
 
 #[tokio::main]
@@ -51,12 +58,12 @@ async fn main() {
         primary: JPY_id,
         secondary: USD_id,
     };
-    exchange.create_market(pair).unwrap();
+    exchange.create_market(pair).await.unwrap();
     let pair = AssetIdPair {
         primary: EUR_id,
         secondary: USD_id,
     };
-    exchange.create_market(pair).unwrap();
+    exchange.create_market(pair).await.unwrap();
 
     // Create some accounts to send orders from
     let concurrency = 10;
@@ -66,6 +73,7 @@ async fn main() {
         let account_id = exchange.create_account();
         account_ids.push(account_id);
     }
+
     // for account_id in account_ids {
     //     let handle = tokio::task::spawn(send_orders(&exchange, account_id, pair, bench_duration));
     //     handles.push(handle);

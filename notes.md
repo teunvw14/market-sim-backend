@@ -12,7 +12,7 @@ Some general notes of things that I need to remember.
 
 # New design candidates
 
-*Async Exchange with Mutex Locks on Orderbooks*
+**Async Exchange with Mutex Locks on Orderbooks**
 Latency: 100 ns
 
 + Simpler design: exchange doesn't need multithreaded architecture
@@ -20,7 +20,7 @@ Latency: 100 ns
 + Tokio runtime: speed + no overhead from managing both the runtime *and* `std::threads`. 
 \- Contention on locks will be maximal, large added latency.
 
-*Sync Multithreaded Exchange, Give Every Connection `mpsc::Sender`s for all MarketHandlers*
+**Sync Multithreaded Exchange, Give Every Connection `mpsc::Sender`s for all MarketHandlers**
 Design latency: 
 
 Uses MPSC channels to send orders to the relevant `MarketHandler`, which sends a response through a `oneshot` channel.

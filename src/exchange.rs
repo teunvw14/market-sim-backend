@@ -83,11 +83,11 @@ pub struct MarketHandler {
 }
 
 impl MarketHandler {
-    pub fn send_order(&self, order: Order) -> OrderInsertionResult {
+    pub async fn send_order(&self, order: Order) -> OrderInsertionResult {
         let (tx_reply, rx_reply) = oneshot::channel();
         let order_buf = OrderBufferWithReplyChannel { order_buf: vec![order].into(), tx_reply };
-        self.tx_order_buf.blocking_send(order_buf).unwrap();
-        rx_reply.blocking_recv().unwrap().pop_front().unwrap() // TODO: fix all these unwraps
+        self.tx_order_buf.send(order_buf).await.unwrap();
+        rx_reply.await.unwrap().pop_front().unwrap() // TODO: fix all these unwraps
     }
 }
 
@@ -119,7 +119,7 @@ impl Markets {
         None
     }
 
-    pub fn add_market(&mut self, asset_pair: AssetIdPair) -> Result<(), MarketCreationError> {
+    pub async fn add_market(&mut self, asset_pair: AssetIdPair) -> Result<(), MarketCreationError> {
         // Find the handler with least number of assigned markets
         let mut min_handler_idx = 0;
         let first = self.handlers.get(0).ok_or(MarketCreationError::NoMarketHandlers)?;
@@ -133,53 +133,55 @@ impl Markets {
             }
         }
 
-        min_handler.tx_market.blocking_send(asset_pair).unwrap();
+        min_handler.tx_market.send(asset_pair).await.unwrap();
         self.handlers.get_mut(min_handler_idx).unwrap().1.push(asset_pair);
 
         Ok(())
     }
 
-    pub fn spawn_market_handler(&mut self) {
-        let (tx_order_buf, mut rx_order_buf) = mpsc::channel::<OrderBufferWithReplyChannel>(MPSC_CAPACITY);
-        let (tx_market, mut rx_market) = mpsc::channel(MPSC_CAPACITY);
-        // Spawn thread that accepts new orders or markets
-        std::thread::spawn(move || {
-            // Create a buffer to store large number of OrderBuffers into when
-            // reading from MPSC channel
-            let mut markets: Vec<Market> = Vec::with_capacity(10);
-            // Receive first market
-            if let Some(first_pair) = rx_market.blocking_recv() {
-                println!("Creating new market {first_pair:?}");
-                markets.push(Market::new(first_pair));
-            }
-            loop {
-                // Check if handler has been assigned a new market. This is 
-                // Clear channel (we don't want to extend it) and receive `OrderBuffer`s
-                let mut channel_buf = Vec::with_capacity(MPSC_CAPACITY);
-                let n = rx_order_buf.blocking_recv_many(&mut channel_buf, MPSC_CAPACITY);
-                if n == 0 { break; }
-                
-                // Process orders
-                for msg in channel_buf {
-                    let mut order_buf = msg.order_buf;
-                    let mut response_buf = VecDeque::with_capacity(order_buf.len());
-                    while let Some(order) = order_buf.pop_front() {
-                        let market_opt = markets.iter_mut().find(|m| m.asset_pair == order.pair);
-                        if let Some(market) = market_opt{
-                            let insertion_result = market.insert_order(order);
-                            response_buf.push_back(insertion_result);
-                        } else {
-                            response_buf.push_back(Err(OrderInsertionError::MarketDoesNotExist));
-                        }
+    async fn process_messages(mut rx_order_buf: mpsc::Receiver<OrderBufferWithReplyChannel>, mut rx_market: mpsc::Receiver<AssetIdPair>) {
+        // Create a buffer to store large number of OrderBuffers into when
+        // reading from MPSC channel
+        let mut markets: Vec<Market> = Vec::with_capacity(10);
+        // Receive first market
+        if let Some(first_pair) = rx_market.recv().await {
+            println!("Creating new market {first_pair:?}");
+            markets.push(Market::new(first_pair));
+        }
+        loop {
+            // Check if handler has been assigned a new market. This is 
+            // Clear channel (we don't want to extend it) and receive `OrderBuffer`s
+            let mut channel_buf = Vec::with_capacity(MPSC_CAPACITY);
+            let n = rx_order_buf.recv_many(&mut channel_buf, MPSC_CAPACITY).await;
+            if n == 0 { break; }
+            
+            // Process orders
+            for msg in channel_buf {
+                let mut order_buf = msg.order_buf;
+                let mut response_buf = VecDeque::with_capacity(order_buf.len());
+                while let Some(order) = order_buf.pop_front() {
+                    let market_opt = markets.iter_mut().find(|m| m.asset_pair == order.pair);
+                    if let Some(market) = market_opt{
+                        let insertion_result = market.insert_order(order);
+                        response_buf.push_back(insertion_result);
+                    } else {
+                        response_buf.push_back(Err(OrderInsertionError::MarketDoesNotExist));
                     }
-                    let _ = msg.tx_reply.send(response_buf);
                 }
-
-                if let Ok(pair) = rx_market.try_recv() {
-                    markets.push(Market::new(pair));
-                }
+                let _ = msg.tx_reply.send(response_buf);
             }
-        });
+
+            if let Ok(pair) = rx_market.try_recv() {
+                markets.push(Market::new(pair));
+            }
+        }
+    }
+
+    pub fn spawn_market_handler(&mut self) {
+        let (tx_order_buf, rx_order_buf) = mpsc::channel::<OrderBufferWithReplyChannel>(MPSC_CAPACITY);
+        let (tx_market, rx_market) = mpsc::channel(MPSC_CAPACITY);
+        // Spawn thread that accepts new orders or markets
+        tokio::task::spawn(Self::process_messages(rx_order_buf, rx_market));
         self.handlers.push((MarketHandler { tx_order_buf, tx_market }, Vec::new()));
     }
 }
@@ -238,7 +240,7 @@ impl Exchange {
         new_id
     }
 
-    pub fn create_market(&mut self, asset_pair: AssetIdPair) -> Result<(), MarketCreationError> {
+    pub async fn create_market(&mut self, asset_pair: AssetIdPair) -> Result<(), MarketCreationError> {
         // Only one market allowed per asset pair
         if self.markets.contains(&asset_pair) {
             return Err(MarketCreationError::MarketAlreadyExists { asset_pair });
@@ -254,7 +256,7 @@ impl Exchange {
                 asset: asset_pair.secondary,
             });
         };
-        self.markets.add_market(asset_pair).unwrap();
+        self.markets.add_market(asset_pair).await.unwrap();
         Ok(())
     }
 
@@ -301,7 +303,7 @@ impl Exchange {
     // }
 
     /// Insert an order (into the orderbook of the relevant market)
-    pub fn insert_order(
+    pub async fn insert_order(
         &self,
         account_id: AccountId,
         order_type: OrderType,
@@ -321,7 +323,7 @@ impl Exchange {
             .markets
             .get_handler(&asset_pair)
             .ok_or(OrderInsertionError::MarketDoesNotExist)?;
-        let execution_effects = market_handler.send_order(order);
+        let execution_effects = market_handler.send_order(order).await;
 
         // let num_accounts = self.accounts.len();
         // let balances = &mut self.balances;
