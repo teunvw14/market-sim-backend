@@ -5,16 +5,20 @@ use thiserror::Error;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::asset::*;
+use crate::balance_manager::*;
 use crate::market::*;
 use crate::order::*;
-use crate::orderbook::*;
 use crate::types::*;
+use crate::market_handler::*;
 
-const MPSC_CAPACITY: usize = 32;
+// Shorthands for disambiguating market_handler::Command[...] and balance_manager::Command[...]
+use crate::market_handler as mkth;
+use crate::balance_manager as blcm;
+
 
 // Errors
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone, Copy)]
 pub enum MarketCreationError {
     #[error("Market for pair {asset_pair:?} already exists.")]
     MarketAlreadyExists { asset_pair: AssetIdPair },
@@ -22,240 +26,86 @@ pub enum MarketCreationError {
     AssetNotTraded { asset: AssetId },
     #[error("There are no market handlers to assign the market to.")]
     NoMarketHandlers,
+    #[error("Unknown error occurred creating a market.")]
+    Other,
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct BalanceBook {
-    inner: Vec<Balance>,
-}
+pub type MarketCreationResult = Result<(), MarketCreationError>;
 
-impl BalanceBook {
-    pub fn new() -> Self {
-        Self { inner: Vec::new() }
-    }
-    fn get_index(asset_id: AssetId, account_id: AccountId, num_accounts: usize) -> Option<usize> {
-        if account_id as usize >= num_accounts {
-            return None;
-        }
-        Some(num_accounts as usize * asset_id as usize + account_id as usize)
-    }
-
-    pub fn get(
-        &self,
-        asset_id: AssetId,
-        account_id: AccountId,
-        num_accounts: usize,
-    ) -> Option<&Balance> {
-        let index = BalanceBook::get_index(asset_id, account_id, num_accounts)?;
-        self.inner.get(index)
-    }
-
-    pub fn get_mut(
-        &mut self,
-        asset_id: AssetId,
-        account_id: AccountId,
-        num_accounts: usize,
-    ) -> Option<&mut Balance> {
-        let index = BalanceBook::get_index(asset_id, account_id, num_accounts)?;
-        self.inner.get_mut(index)
-    }
-
-    pub fn add_asset(&mut self, num_accounts: usize) {
-        for _ in 0..num_accounts {
-            self.inner.push(Balance::ZERO);
-        }
-    }
-
-    pub fn create_account(&mut self, num_accounts: usize, num_assets: usize) {
-        for i in 0..num_assets {
-            let index = (i + 1) * num_accounts + i;
-            self.inner.insert(index, Balance::ZERO);
-        }
+impl<T> From<tokio::sync::mpsc::error::SendError<T>> for MarketCreationError {
+    fn from(_value: tokio::sync::mpsc::error::SendError<T>) -> Self {
+        MarketCreationError::Other
     }
 }
 
-#[derive(Debug, Clone)]
-/// MarketHandler holds the `Sender`s needed to communicate with a thread managing
-/// certain markets
-pub struct MarketHandler {
-    tx_order_buf: mpsc::Sender<OrderBufferWithReplyChannel>,
-    tx_market: mpsc::Sender<AssetIdPair>,
-}
-
-impl MarketHandler {
-    pub fn new() -> Self {
-        let (tx_order_buf, rx_order_buf) =
-            mpsc::channel::<OrderBufferWithReplyChannel>(MPSC_CAPACITY);
-        let (tx_market, rx_market) = mpsc::channel(MPSC_CAPACITY);
-        // Spawn thread that accepts new orders or markets
-        tokio::task::spawn(Self::process_messages(rx_order_buf, rx_market));
-        MarketHandler {
-            tx_order_buf,
-            tx_market,
-        }
-    }
-
-    pub async fn send_order(&self, order: OrderInsertion) -> OrderInsertionResult {
-        let (tx_reply, rx_reply) = oneshot::channel();
-        let order_buf = OrderBufferWithReplyChannel {
-            order_buf: vec![order].into(),
-            tx_reply,
-        };
-        self.tx_order_buf.send(order_buf).await.unwrap();
-        rx_reply.await.unwrap().pop_front().unwrap() // TODO: fix all these unwraps
-    }
-
-    async fn process_messages(
-        mut rx_order_buf: mpsc::Receiver<OrderBufferWithReplyChannel>,
-        mut rx_market: mpsc::Receiver<AssetIdPair>,
-    ) {
-        // Create a buffer to store large number of OrderBuffers into when
-        // reading from MPSC channel
-        let mut markets: Vec<Market> = Vec::with_capacity(10);
-        // Receive first market
-        if let Some(first_pair) = rx_market.recv().await {
-            println!("Creating new market {first_pair:?}");
-            markets.push(Market::new(first_pair));
-        }
-        loop {
-            // Check if handler has been assigned a new market. This is
-            // Clear channel (we don't want to extend it) and receive `OrderBuffer`s
-            let mut channel_buf = Vec::with_capacity(MPSC_CAPACITY);
-            let n = rx_order_buf
-                .recv_many(&mut channel_buf, MPSC_CAPACITY)
-                .await;
-            if n == 0 {
-                break;
-            }
-
-            // Process orders
-            for msg in channel_buf {
-                let mut order_buf = msg.order_buf;
-                let mut response_buf = VecDeque::with_capacity(order_buf.len());
-                while let Some(order) = order_buf.pop_front() {
-                    let market_opt = markets.iter_mut().find(|m| m.asset_pair == order.pair);
-                    if let Some(market) = market_opt {
-                        let insertion_result = market.insert_order(order);
-                        response_buf.push_back(insertion_result);
-                    } else {
-                        response_buf.push_back(Err(OrderInsertionError::MarketDoesNotExist));
-                    }
-                }
-                let _ = msg.tx_reply.send(response_buf);
-            }
-
-            if let Ok(pair) = rx_market.try_recv() {
-                markets.push(Market::new(pair));
-            }
-        }
+impl From<tokio::sync::oneshot::error::RecvError> for MarketCreationError {
+    fn from(_value: tokio::sync::oneshot::error::RecvError) -> Self {
+        MarketCreationError::Other
     }
 }
 
-/// Holds all the different MarketHandlers
-#[derive(Debug, Default, Clone)]
-pub struct MarketHandlers {
-    pub inner: Vec<(MarketHandler, Vec<AssetIdPair>)>,
-}
-
-impl MarketHandlers {
-    /// Create a new MarketHandlers struct with one handler
-    pub fn new() -> Self {
-        Self::with_handlers(1)
-    }
-
-    /// Create a new MarketHandlers struct with n handlers
-    pub fn with_handlers(n: usize) -> Self {
-        let mut result = MarketHandlers { inner: Vec::new() };
-        for _ in 0..n {
-            result.add_handler();
-        }
-        result
-    }
-
-    /// Checks if there is a handler for the given market
-    pub fn contains_market(&self, key: &AssetIdPair) -> bool {
-        for (_handler, handler_pairs) in &self.inner {
-            if handler_pairs.contains(key) {
-                return true;
-            }
-        }
-        false
-    }
-
-    /// Tries to get the MarketHandler for the given market
-    pub fn get_handler(&self, asset_pair: &AssetIdPair) -> Option<&MarketHandler> {
-        for (handler, pairs) in &self.inner {
-            if pairs.contains(asset_pair) {
-                return Some(handler);
-            }
-        }
-        None
-    }
-
-    /// Adds a market and assigns it to the handler with the least amount of assigned markets
-    pub async fn add_market(&mut self, asset_pair: AssetIdPair) -> Result<(), MarketCreationError> {
-        // Find the handler with least number of assigned markets
-        let mut min_handler_idx = 0;
-        let first = self
-            .inner
-            .get(0)
-            .ok_or(MarketCreationError::NoMarketHandlers)?;
-        let mut min_handler = &first.0;
-        let mut min_assigned_pairs = first.1.len();
-        for (i, (handler, assigned_pairs)) in self.inner.iter().enumerate() {
-            if assigned_pairs.len() < min_assigned_pairs {
-                min_handler_idx = i;
-                min_assigned_pairs = assigned_pairs.len();
-                min_handler = handler;
-            }
-        }
-
-        min_handler.tx_market.send(asset_pair).await.unwrap();
-        self.inner
-            .get_mut(min_handler_idx)
-            .unwrap()
-            .1
-            .push(asset_pair);
-
-        Ok(())
-    }
-
-    /// Creates a new MarketHandler
-    pub fn add_handler(&mut self) {
-        let handler = MarketHandler::new();
-        self.inner.push((handler, Vec::new()));
-    }
-}
 
 /// Wrapper around Markets for sending orders to an exchange
 pub struct ExchangeClient {
-    inner: MarketHandlers,
+    market_handlers: MarketHandlers,
+    balance_manager: BalanceManager
 }
 
 impl ExchangeClient {
-    pub fn from_handlers(handlers: &MarketHandlers) -> Self {
-        ExchangeClient {
-            inner: handlers.clone(),
+    pub fn get_handler(&self, asset_pair: &AssetIdPair) -> Option<&MarketHandler> {
+        self.market_handlers.get_handler(asset_pair)
+    }
+
+    pub async fn insert_order(&self,
+        account_id: AccountId,
+        order_type: OrderType,
+        pair: AssetIdPair,
+        side: Side,
+        volume: Volume,
+        price: Price,
+    ) -> OrderInsertionResult {
+        let order_insertion_req = OrderInsertionRequest {
+            account_id,
+            order_type,
+            pair,
+            side,
+            volume,
+            price,
+        };
+        let command = Command::OrderInsert(order_insertion_req);
+        let buf = mkth::CommandBuffer { pair, buf: vec![command].into() };
+        let result_buf = self.send_market_commands(buf).await;
+        match result_buf[0] {
+            CommandResult::OrderInsert(result) => {
+                result
+            }
+            _ => {
+                // Should never occur
+                Err(OrderInsertionError::Other)
+            }
         }
     }
-
-    pub fn get_handler(&self, asset_pair: &AssetIdPair) -> Option<&MarketHandler> {
-        self.inner.get_handler(asset_pair)
+    
+    pub async fn send_market_commands(&self, command_buf: mkth::CommandBuffer) -> mkth::CommandResultBuffer {
+        let handler = self
+            .get_handler(&command_buf.pair);
+        if let None = handler {
+            // TODO: make this neater, so that it doesn't have to return a Vec of errors meant for something else entirely
+            return vec![CommandResult::OrderInsert(Err(OrderInsertionError::MarketDoesNotExist)); command_buf.buf.len()].into();
+        }
+        let handler = handler.unwrap();
+        return handler.send_commands(command_buf).await
     }
 
-    pub async fn insert_order(&self, order: OrderInsertion) -> OrderInsertionResult {
-        let pair = order.pair;
-        let handler = self
-            .get_handler(&pair)
-            .ok_or(OrderInsertionError::MarketDoesNotExist)?;
-        handler.send_order(order).await
+    pub async fn get_balance(&self, account_id: AccountId, asset_id: AssetId) -> Option<Balance> {
+        self.balance_manager.get_balance(account_id, asset_id).await
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Exchange {
     accounts: HashMap<AccountId, Account>,
-    balances: BalanceBook,
+    balance_manager: BalanceManager,
     traded_assets: HashMap<AssetId, Asset>,
     market_handlers: MarketHandlers,
 }
@@ -268,21 +118,33 @@ pub struct Account {
 impl Exchange {
     pub fn new() -> Self {
         // Spawn at least one market handler
+        let balance_manager = BalanceManager::new();
+        let tx_blcm_command_buf = balance_manager.tx_command_buf.clone();
         Exchange {
             accounts: HashMap::new(),
-            balances: BalanceBook::new(),
+            balance_manager: balance_manager,
             traded_assets: HashMap::new(),
-            session_orders: Vec::with_capacity(100_000),
-            market_handlers: MarketHandlers::new(),
+            market_handlers: MarketHandlers::new(tx_blcm_command_buf),
         }
     }
 
-    pub fn get_client(&self) -> ExchangeClient {
-        ExchangeClient::from_handlers(&self.market_handlers)
+    pub fn with_market_handlers(mut self, n: usize) -> Self {
+        while self.market_handlers.inner.len() < n {
+            let tx_balance_manager = self.balance_manager.tx_command_buf.clone();
+            self.market_handlers.add_handler(tx_balance_manager);
+        }
+        self
     }
 
-    pub fn add_asset(&mut self, name: &str, symbol: &str) -> AssetId {
-        let new_id = self.traded_assets.len() as u32;
+    pub fn get_client(&self) -> ExchangeClient {
+        ExchangeClient {
+            market_handlers: self.market_handlers.clone(),
+            balance_manager: self.balance_manager.clone()
+        }
+    }
+
+    pub async fn add_asset(&mut self, name: &str, symbol: &str) -> AssetId {
+        let new_id = self.balance_manager.add_asset().await;
         let name = name.to_string();
         let symbol = symbol.to_string();
         let new_asset = Asset {
@@ -291,8 +153,6 @@ impl Exchange {
             symbol,
         };
         self.traded_assets.insert(new_id, new_asset.clone());
-        let num_accounts = self.accounts.len();
-        self.balances.add_asset(num_accounts);
         new_id
     }
 
@@ -300,9 +160,9 @@ impl Exchange {
         self.traded_assets.remove(&asset_id);
     }
 
-    pub fn create_account(&mut self) -> AccountId {
+    pub async fn create_account(&mut self) -> AccountId {
         let accounts = &mut self.accounts;
-        let new_id = accounts.len() as u32;
+        let new_id = self.balance_manager.add_account().await;
         accounts.insert(new_id, Account { id: new_id });
         new_id
     }
@@ -310,7 +170,7 @@ impl Exchange {
     pub async fn create_market(
         &mut self,
         asset_pair: AssetIdPair,
-    ) -> Result<(), MarketCreationError> {
+    ) -> MarketCreationResult {
         // Only one market allowed per asset pair
         if self.market_handlers.contains_market(&asset_pair) {
             return Err(MarketCreationError::MarketAlreadyExists { asset_pair });
@@ -326,16 +186,7 @@ impl Exchange {
                 asset: asset_pair.secondary,
             });
         };
-        self.market_handlers.add_market(asset_pair).await.unwrap();
-        Ok(())
-    }
-
-    pub fn get_order(&self, order_id: &OrderId) -> Option<&OrderInsertion> {
-        self.session_orders.get(*order_id)
-    }
-
-    pub fn get_order_mut(&mut self, order_id: &OrderId) -> Option<&mut OrderInsertion> {
-        self.session_orders.get_mut(*order_id)
+        self.market_handlers.add_market(asset_pair).await
     }
 
     // pub fn get_last_price(&self, asset_pair: AssetIdPair) -> Option<Price> {

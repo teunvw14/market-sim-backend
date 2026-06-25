@@ -1,10 +1,8 @@
-use std::{collections::VecDeque, fmt::Display};
-
-use tokio::sync::oneshot;
+use std::fmt::Display;
 
 use crate::{
     asset::*,
-    orderbook::{OrderExecutionStatus, OrderInsertionResult},
+    market::*,
     types::*,
 };
 
@@ -21,8 +19,9 @@ pub enum Side {
     Ask,
 }
 
+/// A request to insert a particular order, without an identifying Id or status.
 #[derive(Debug, Clone, Copy)]
-pub struct OrderInsertion {
+pub struct OrderInsertionRequest {
     /// The id of the account that created the order.
     pub account_id: AccountId,
     /// The type of the order (limit, market, etc.). Field is `order_type` because `type` is a reserved keyword.
@@ -37,42 +36,95 @@ pub struct OrderInsertion {
     pub price: Price,
 }
 
-impl Display for OrderInsertion {
+impl OrderInsertionRequest {
+    pub fn into_insertion(self, id: OrderId) -> OrderInserted {
+        OrderInserted {
+            id,
+            account_id: self.account_id,
+            order_type: self.order_type,
+            pair: self.pair,
+            side: self.side,
+            volume: self.volume,
+            price: self.price,
+            status: OrderExecutionStatus::default()
+        }
+    }
+}
+
+/// OrderInsertion is an processed OrderInsertionRequest.
+#[derive(Debug, Clone)]
+pub struct OrderInserted {
+    /// Identifying order id
+    pub id: usize,
+    /// The id of the account that created the order.
+    pub account_id: AccountId,
+    /// The type of the order (limit, market, etc.). Field is `order_type` because `type` is a reserved keyword.
+    pub order_type: OrderType,
+    /// The pair that the order should be executed on.
+    pub pair: AssetIdPair,
+    /// Side of the order (Bid / Ask).
+    pub side: Side,
+    /// Volume of the order in whole units.
+    pub volume: Volume,
+    /// Price of the order.
+    pub price: Price,
+    /// Status of the order (partial fill, filled, cancelled, etc.)
+    pub status: OrderExecutionStatus,
+}
+
+impl Display for OrderInserted {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let id = self.id;
+        let status = self.status;
         let acc_id = self.account_id;
         let ot = &self.order_type;
+        let pair = &self.pair;
         let side = &self.side;
         let volume = self.volume;
         let price = self.price;
         write!(
             f,
-            "Order from account {acc_id}: {side:?} {volume} at {price} ({ot:?})"
+            "Order {id} in Market {pair:?} from account {acc_id}: {side:?} {volume} at {price} ({ot:?}) | {status:?}"
         )
     }
 }
 
-pub type OrderBuffer = VecDeque<OrderInsertion>;
-pub type OrderInsertionResultBuffer = VecDeque<OrderInsertionResult>;
-
-pub struct OrderBufferWithReplyChannel {
-    pub order_buf: OrderBuffer,
-    pub tx_reply: oneshot::Sender<OrderInsertionResultBuffer>,
+/// OderCancellationRequest is how a request to cancel an order is received. Needs to be transformed into an OrderCancellation to be efficiently removed from an Orderbook.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct OrderCancellationRequest {
+    pub pair: AssetIdPair,
+    pub order_id: OrderId,
 }
 
-/// OderCancellation encapsulates the information needed to efficiently remove an order
+impl OrderCancellationRequest {
+    pub fn into_cancellation(self, side: Side, price: Price) -> OrderCancellation {
+        OrderCancellation { pair: self.pair, order_id: self.order_id, side, price }
+    }
+}
+
+/// OderCancellation encapsulates the information needed to remove an order efficiently.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct OrderCancellation {
+    pub pair: AssetIdPair,
     pub order_id: OrderId,
     pub side: Side,
-    pub price: Price,
+    pub price: Price
 }
 
-// impl From<OrderInsertion> for OrderCancellation {
-//     fn from(order: OrderInsertion) -> Self {
-//         Self {
-//             order_id: order.id,
-//             side: order.side,
-//             price: order.price,
-//         }
-//     }
-// }
+/// OrderModificationRequest is how a request to modify an order is received. Needs to be transformed into an OrderModification to be efficiently removed from an Orderbook.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct OrderModificationRequest {
+    pub pair: AssetIdPair,
+    pub order_id: OrderId,
+    pub new_volume: Volume,
+}
+
+/// OrderModificationRequest is how a request to modify an order is received. Needs to be transformed into an OrderModification to be efficiently removed from an Orderbook.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct OrderModification {
+    pub pair: AssetIdPair,
+    pub order_id: OrderId,
+    pub new_volume: Volume,
+    pub side: Side,
+    pub price: Price
+}

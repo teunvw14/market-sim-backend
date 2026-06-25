@@ -1,6 +1,8 @@
 pub mod asset;
 pub mod exchange;
 pub mod market;
+pub mod market_handler;
+pub mod balance_manager;
 pub mod order;
 pub mod orderbook;
 pub mod statics;

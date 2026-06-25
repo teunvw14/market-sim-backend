@@ -30,7 +30,7 @@ Creates an account on the exchange. Returns `Ok(id)` where `id` is the account i
 
 ### ModifyOrder(AccountId, OrderId, volume) -> Result(())
 
-Request to cancel order `id`
+Request to cancel order `id`. 
 
 ### CancelOrder (id)
 

@@ -6,6 +6,7 @@ use std::num::NonZero;
 use crate::asset::*;
 use crate::order::*;
 use crate::types::*;
+use crate::market::*;
 
 #[derive(Debug, Clone)]
 pub struct OrderbookEntry {
@@ -14,15 +15,15 @@ pub struct OrderbookEntry {
     pub remaining_volume: Volume,
 }
 
-// impl From<OrderInsertion> for OrderbookEntry {
-//     fn from(order: OrderInsertion) -> Self {
-//         OrderbookEntry {
-//             order_id: order.id,
-//             account_id: order.account_id,
-//             remaining_volume: order.volume,
-//         }
-//     }
-// }
+impl From<OrderInserted> for OrderbookEntry {
+    fn from(order: OrderInserted) -> Self {
+        OrderbookEntry {
+            order_id: order.id,
+            account_id: order.account_id,
+            remaining_volume: order.volume,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct Orderbook {
@@ -30,31 +31,16 @@ pub struct Orderbook {
     pub asks: BTreeMap<Price, VecDeque<OrderbookEntry>>,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum OrderInsertionError {
-    /// The specified market does not exist.
-    MarketDoesNotExist,
-    /// The parameters on the order are illegal. Illegal parameters should be caught by the calling frontend if possible.
-    IllegalParameters,
-    /// The order was killed (only for Fill-or-Kill orders).
-    OrderKilled,
-    /// There was not enough volume to fill the order (only for market or Fill-or-Kill orders).
-    InadequateVolume,
+pub struct ObOrderInsertionEffects {
+    pub order_changes: OrderChangeBuffer,
+    pub status: OrderExecutionStatus,
+    pub last_traded_price: Option<Price>,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum OrderCancellationError {
-    /// The specified order does not exist.
-    OrderDoesNotExist,
-    /// User was not the one who created the order.
-    NotAuthorized,
-    /// The specified order was already filled
-    AlreadyFilled,
-    /// Market that the Order is registered for (no longer) exists. Should never happen in practice.
-    MarketDoesNotExist,
-    /// Order cannot be cancelled (because it is not a limit order)
-    NotCancellable,
-}
+/// Orderbook insertion result
+pub type ObOrderInsertionResult = Result<ObOrderInsertionEffects, OrderInsertionError>;
+/// Orderbook cancellation result
+pub type ObOrderCancellationResult = Result<(), OrderCancellationError>;
 
 /// A change in the remaining volume of order with id `id`. Change should always
 /// be interpreted as a decrease (negative change)
@@ -65,25 +51,6 @@ pub struct OrderChange {
 }
 
 pub type OrderChangeBuffer = Vec<OrderChange>;
-
-pub struct OrderInsertionEffects {
-    // The id assigned to the order
-    pub id: usize,
-    pub status: OrderExecutionStatus,
-    pub last_traded_price: Option<Price>
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum OrderExecutionStatus {
-    AwaitingFill,
-    PartialFill,
-    Filled,
-    Killed,
-    Cancelled,
-}
-
-pub type OrderInsertionResult = Result<OrderInsertionEffects, OrderInsertionError>;
-pub type OrderCancellationResult = Result<(), OrderCancellationError>;
 
 impl Orderbook {
     pub fn new() -> Orderbook {
@@ -107,13 +74,15 @@ impl Orderbook {
         Some(first_order)
     }
 
-    pub fn insert_limit_order_no_matching(&mut self, order: OrderInsertion) {
+    pub fn insert_limit_order_no_matching(&mut self, order: OrderInserted) {
         let price = order.price;
-        let book_side = match order.side {
+        let side = order.side;
+        
+        let book_side = match side {
             Side::Ask => &mut self.asks,
             Side::Bid => &mut self.bids,
         };
-        let first_entry_opt = match order.side {
+        let first_entry_opt = match side {
             Side::Ask => book_side.first_entry(),
             Side::Bid => book_side.last_entry(),
         };
@@ -147,12 +116,16 @@ impl Orderbook {
         Err(OrderCancellationError::AlreadyFilled)
     }
 
-    pub fn insert_order_limit(&mut self, mut order: OrderInsertion) -> OrderInsertionResult {
+    pub fn insert_order_limit(&mut self, mut order: OrderInserted) -> ObOrderInsertionResult {
         let mut remaining = order.volume;
         let mut last_traded_price = None;
         let mut order_change_buf = Vec::new();
 
-        let prices = match order.side {
+        let side = order.side;
+        let volume = order.volume;
+        let price = order.price;
+
+        let prices = match side {
             Side::Ask => &mut self.bids,
             Side::Bid => &mut self.asks,
         };
@@ -166,10 +139,10 @@ impl Orderbook {
             }
         }
 
-        while let Some((price, open_orders)) = next_price_orders(&mut prices.iter_mut(), order.side)
+        while let Some((open_order_price, open_orders)) = next_price_orders(&mut prices.iter_mut(), side)
         {
-            let bid_price_too_high = order.side == Side::Bid && *price > order.price;
-            let ask_price_too_low = order.side == Side::Ask && *price < order.price;
+            let bid_price_too_high = side == Side::Bid && *open_order_price > price;
+            let ask_price_too_low = side == Side::Ask && *open_order_price < price;
             if bid_price_too_high || ask_price_too_low {
                 break;
             }
@@ -190,13 +163,13 @@ impl Orderbook {
                 }
 
                 if remaining <= 0 {
-                    last_traded_price = Some(*price);
+                    last_traded_price = Some(*open_order_price);
                     break;
                 }
             }
             if open_orders.is_empty() {
                 // Clean up orderbook
-                match order.side {
+                match side {
                     Side::Ask => {
                         prices.pop_first();
                     }
@@ -211,7 +184,7 @@ impl Orderbook {
         }
 
         // Second order change
-        let volume_filled = order.volume - remaining;
+        let volume_filled = volume - remaining;
         order_change_buf.push(OrderChange {
             id: order.id,
             change: volume_filled,
@@ -220,9 +193,15 @@ impl Orderbook {
         // Enter limit order into orderbook
         order.volume = remaining;
         self.insert_limit_order_no_matching(order);
-        Ok(OrderInsertionEffects {
+        let status = if remaining > 0 {
+            OrderExecutionStatus::AwaitingFill
+        } else {
+            OrderExecutionStatus::Filled
+        };
+        Ok(ObOrderInsertionEffects {
             order_changes: order_change_buf,
             last_traded_price,
+            status
         })
     }
 
