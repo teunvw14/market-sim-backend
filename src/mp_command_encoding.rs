@@ -1,13 +1,31 @@
 use bytes::{Buf, BytesMut};
-use tokio_util::codec::Decoder;
+use serde::Serialize;
+use tokio_util::codec::{Decoder, Encoder };
+use tracing::debug;
 
 use crate::exchange::CommandBuffer;
 
+/// Encoder for turning a Exchange::CommandBuffer into MessagePack formatted bytes. 
+pub struct MpCommandEncoder {}
+
+impl<Item: Serialize> Encoder<Item> for MpCommandEncoder {
+    type Error = std::io::Error;
+    fn encode(&mut self, item: Item, dst: &mut BytesMut) -> Result<(), Self::Error> {
+        let mp_encoded = rmp_serde::to_vec(&item)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        if mp_encoded.len() > u16::MAX as usize {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Message too long!"));
+        }
+        let len_bytes = (mp_encoded.len() as u16).to_be_bytes();
+        dst.extend_from_slice(&len_bytes);
+        dst.extend_from_slice(&mp_encoded);
+
+        Ok(())
+    }
+}
+
 /// Decoder for generating frames of Exchange::CommandBuffer encoded with MessagePack from raw bytes.
 pub struct MpCommandDecoder {}
-
-// Command buffer maximum number of commands
-pub const MAX_CMD_BUF_SIZE: usize = 1024;
 
 // Adapted from the docs at
 // https://docs.rs/tokio-util/latest/tokio_util/codec/index.html#example-decoder
@@ -28,8 +46,9 @@ impl Decoder for MpCommandDecoder {
         let length = u16::from_be_bytes(length_bytes) as usize;
 
         // Reserve more space in the buffer if the whole command hasn't arrived yet
-        let bytes_to_receive = 2 + length - src.len();
-        if bytes_to_receive > 0 {
+        if src.len() < 2 + length {
+            let bytes_to_receive = 2 + length - src.len();
+            debug!("bytes to receive: {bytes_to_receive}");
             src.reserve(bytes_to_receive);
 
             // Frame isn't fully available yet, so return Ok(None) as required by spec.

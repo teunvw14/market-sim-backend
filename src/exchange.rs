@@ -4,6 +4,7 @@ use std::collections::VecDeque;
 use ringbuf::{LocalRb, storage::Heap, traits::*};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
+use tracing::trace;
 
 use crate::asset::*;
 use crate::balance_book::BalanceBook;
@@ -290,6 +291,7 @@ impl Exchange {
     /// Process orders in the
     fn process_transactions(&mut self, pair: AssetIdPair) {
         while let Some(transaction) = self.transaction_buf.pop() {
+            trace!("New transaction: {transaction:?}");
             let volume_primary = Balance::from(transaction.volume);
             let volume_secondary = volume_primary * transaction.price;
 

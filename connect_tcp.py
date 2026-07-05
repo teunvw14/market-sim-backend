@@ -21,7 +21,7 @@ if __name__ == "__main__":
     sock = open_connection(host, port)
 
     # Example: send and receive some data
-    sock.sendall(b"hello\n")
+    sock.sendall(b"\0$\x91\x81\xabOrderInsert\x96\0\xa5Limit\x92\0\x01\xa3Ask\x05\x91\xce\x80\0\0\0")
     print("sent data")
     data = sock.recv(1024)
     print(f"Received: {data!r}")

@@ -7,7 +7,7 @@ use num_format::{CustomFormat, ToFormattedString};
 
 use backend::{
     asset::*,
-    mp_command_decoder::MAX_CMD_BUF_SIZE,
+    mp_command_encoding::MAX_CMD_BUF_SIZE,
     exchange::*,
     order::*,
     statics::{ORDER_PRICES, VOLUMES},

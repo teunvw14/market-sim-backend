@@ -3,16 +3,19 @@ use std::{
     net::SocketAddr,
     time::{Duration, Instant},
 };
+use bytes::BytesMut;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
 };
-use tracing::{Level, error, info, warn};
+use tokio_util::codec::FramedRead;
+use tokio_stream::StreamExt;
+use tracing::{Level, debug, info, warn, error};
 use tracing_subscriber::FmtSubscriber;
 
 use num_format::{CustomFormat, ToFormattedString};
 
-use backend::{asset::*, exchange::*, exchange_configs, order::*, statics::*, types::*};
+use backend::{asset::*, exchange::*, exchange_configs, mp_command_encoding::MpCommandDecoder, order::*, statics::*, types::*};
 
 // Default, should be made configurable. Connections < 100 makes this a
 // reasonable default.
@@ -27,43 +30,29 @@ async fn handle_connection(
 ) {
     info!("New connection: {addr}");
 
+    let command_decoder = MpCommandDecoder {};
+    let mut frame_reader = FramedRead::with_capacity(stream, command_decoder, BUFFER_SIZE);
+
     // Initialize read buffer
-    let mut buf = vec![0u8; buffer_size];
+    // let mut buf = BytesMut::with_capacity(BUFFER_SIZE);
 
     loop {
-        if stream.readable().await.is_err() {
-            continue;
-        }
-        match stream.try_read(&mut buf) {
-            Ok(0) => {
+        // if frame_reader.readable().await.is_err() {
+        //     continue;
+        // }
+        match frame_reader.next().await {
+            None => {
                 info!("Disconnected: {addr}");
                 break;
             }
-            Ok(n) => {
-                // Echo back to client
-                loop {
-                    if stream.writable().await.is_err() {
-                        continue;
-                    };
-                    match stream.try_write(&buf[..n]) {
-                        Ok(n) => {
-                            println!("Sent back {n} bytes");
-                            break;
-                        }
-                        Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => continue,
-                        Err(e) => {
-                            warn!("Failed to write to {addr}: {}", e);
-                            break;
-                        }
-                    }
-                }
-            }
-            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                continue;
-            }
-            Err(e) => {
-                error!("Failed to read from {addr}: {}", e);
+            Some(Err(e)) => {
+                info!("Disconnecting {addr} due to error: {e}");
                 break;
+            }
+            Some(Ok(decoded_commands)) => {
+                // Insert commands but ignore for now
+                debug!("Received commands: {decoded_commands:?}");
+                let _res = client.send_commands(decoded_commands).await;
             }
         }
     }
@@ -79,7 +68,9 @@ async fn main() {
         .expect("Tracing subscriber should be set successfully.");
 
     // Initialize Exchange and TcpListener
-    let (exchange_handle, pair) = exchange_configs::exchange_eur_usd_market().await;
+    let (exchange_handle, pair, id1, id2) = exchange_configs::exchange_eur_usd_market_2_accs().await;
+    println!("id1: {id1:?}");
+    println!("pair: {pair:?}");
     let listener = TcpListener::bind("127.0.0.1:5555").await.unwrap();
 
     // Run core loop
