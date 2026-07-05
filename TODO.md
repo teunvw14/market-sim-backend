@@ -9,3 +9,8 @@
 - Fix high-latency order-insertions
 - add OrderInsert type which elides the status field present on Order
 - Create exchange config type or exchange builder for configurability
+- Switch to anyhow
+
+# Done
+
+- Block self-trades on insertion v

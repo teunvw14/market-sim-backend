@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::types::*;
 
 #[derive(PartialEq, Eq, Debug, Clone, Default, Hash)]
@@ -13,7 +15,7 @@ pub struct AssetPair {
     pub secondary: Asset,
 }
 
-#[derive(PartialEq, Eq, Debug, Clone, Copy, Default, Hash)]
+#[derive(PartialEq, Eq, Debug, Clone, Copy, Default, Hash, Serialize, Deserialize)]
 pub struct AssetIdPair {
     pub primary: AssetId,
     pub secondary: AssetId,

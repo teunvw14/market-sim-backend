@@ -1,150 +1,152 @@
 use std::collections::HashMap;
 use std::collections::VecDeque;
 
-use thiserror::Error;
+use ringbuf::{LocalRb, storage::Heap, traits::*};
+use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::asset::*;
-use crate::balance_manager::*;
+use crate::balance_book::BalanceBook;
 use crate::market::*;
 use crate::order::*;
+use crate::orderbook::*;
+use crate::statics::MPSC_CAPACITY;
 use crate::types::*;
-use crate::market_handler::*;
 
-// Shorthands for disambiguating market_handler::Command[...] and balance_manager::Command[...]
-use crate::market_handler as mkth;
-use crate::balance_manager as blcm;
-
-
-// Errors
-
-#[derive(Error, Debug, Clone, Copy)]
-pub enum MarketCreationError {
-    #[error("Market for pair {asset_pair:?} already exists.")]
-    MarketAlreadyExists { asset_pair: AssetIdPair },
-    #[error("Asset {asset:?} is not traded on this exchange.")]
-    AssetNotTraded { asset: AssetId },
-    #[error("There are no market handlers to assign the market to.")]
-    NoMarketHandlers,
-    #[error("Unknown error occurred creating a market.")]
-    Other,
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum Command {
+    OrderInsert(OrderInsertionRequest),
+    OrderCancel(OrderCancellationRequest),
+    OrderModify(OrderModificationRequest),
+    AddMarket(AssetIdPair),
+    GetBalance(AccountId, AssetId),
 }
 
-pub type MarketCreationResult = Result<(), MarketCreationError>;
-
-impl<T> From<tokio::sync::mpsc::error::SendError<T>> for MarketCreationError {
-    fn from(_value: tokio::sync::mpsc::error::SendError<T>) -> Self {
-        MarketCreationError::Other
-    }
+#[derive(Debug, Clone, Serialize)]
+pub enum CommandResult {
+    OrderInsert(OrderInsertionResult),
+    OrderCancel(OrderCancellationResult),
+    OrderModify(OrderModificationResult),
+    AddMarket(MarketCreationResult),
+    GetBalance(Option<Balance>),
 }
 
-impl From<tokio::sync::oneshot::error::RecvError> for MarketCreationError {
-    fn from(_value: tokio::sync::oneshot::error::RecvError) -> Self {
-        MarketCreationError::Other
-    }
-}
+/// A buffer of commands for a specific market
+pub type CommandBuffer = VecDeque<Command>;
 
+/// A buffer of results from a CommandBuffer
+pub type CommandResultBuffer = VecDeque<CommandResult>;
+
+pub struct CommandBufferWithReplyChannel {
+    pub command_buf: CommandBuffer,
+    pub tx_reply: oneshot::Sender<CommandResultBuffer>,
+}
 
 /// Wrapper around Markets for sending orders to an exchange
 pub struct ExchangeClient {
-    market_handlers: MarketHandlers,
-    balance_manager: BalanceManager
+    tx_command_buf: mpsc::Sender<CommandBufferWithReplyChannel>,
 }
 
 impl ExchangeClient {
-    pub fn get_handler(&self, asset_pair: &AssetIdPair) -> Option<&MarketHandler> {
-        self.market_handlers.get_handler(asset_pair)
-    }
-
-    pub async fn insert_order(&self,
-        account_id: AccountId,
-        order_type: OrderType,
-        pair: AssetIdPair,
-        side: Side,
-        volume: Volume,
-        price: Price,
+    /// Helper function to send a single order insertion
+    pub async fn insert_order(
+        &self,
+        order_insertion_req: OrderInsertionRequest,
     ) -> OrderInsertionResult {
-        let order_insertion_req = OrderInsertionRequest {
-            account_id,
-            order_type,
-            pair,
-            side,
-            volume,
-            price,
-        };
         let command = Command::OrderInsert(order_insertion_req);
-        let buf = mkth::CommandBuffer { pair, buf: vec![command].into() };
-        let result_buf = self.send_market_commands(buf).await;
-        match result_buf[0] {
-            CommandResult::OrderInsert(result) => {
-                result
+        let buf: CommandBuffer = vec![command].into();
+        let mut result_buf = self.send_commands(buf).await;
+        if let Some(result) = result_buf.pop_front() {
+            match result {
+                CommandResult::OrderInsert(res) => res,
+                _ => Err(OrderInsertionError::Other),
             }
-            _ => {
-                // Should never occur
-                Err(OrderInsertionError::Other)
-            }
+        } else {
+            Err(OrderInsertionError::Other)
         }
-    }
-    
-    pub async fn send_market_commands(&self, command_buf: mkth::CommandBuffer) -> mkth::CommandResultBuffer {
-        let handler = self
-            .get_handler(&command_buf.pair);
-        if let None = handler {
-            // TODO: make this neater, so that it doesn't have to return a Vec of errors meant for something else entirely
-            return vec![CommandResult::OrderInsert(Err(OrderInsertionError::MarketDoesNotExist)); command_buf.buf.len()].into();
-        }
-        let handler = handler.unwrap();
-        return handler.send_commands(command_buf).await
     }
 
     pub async fn get_balance(&self, account_id: AccountId, asset_id: AssetId) -> Option<Balance> {
-        self.balance_manager.get_balance(account_id, asset_id).await
+        let command = Command::GetBalance(account_id, asset_id);
+        let buf: CommandBuffer = vec![command].into();
+        let mut result_buf = self.send_commands(buf).await;
+        if let Some(result) = result_buf.pop_front()
+            && let CommandResult::GetBalance(balance) = result
+        {
+            return balance;
+        }
+        None
+    }
+
+    pub async fn send_commands(&self, command_buf: CommandBuffer) -> CommandResultBuffer {
+        let (tx_reply, rx_reply) = oneshot::channel();
+        let command_buf = CommandBufferWithReplyChannel {
+            command_buf: command_buf,
+            tx_reply,
+        };
+        self.tx_command_buf.send(command_buf).await.unwrap();
+        rx_reply.await.unwrap() // TODO: fix all these unwraps
     }
 }
 
-#[derive(Debug)]
-pub struct Exchange {
-    accounts: HashMap<AccountId, Account>,
-    balance_manager: BalanceManager,
-    traded_assets: HashMap<AssetId, Asset>,
-    market_handlers: MarketHandlers,
+pub struct Transaction {
+    pub price: Price,
+    pub volume: Volume,
+    pub taker_side: Side,
+    pub maker: AccountId,
+    pub taker: AccountId,
 }
 
-#[derive(Debug)]
+pub struct Exchange {
+    accounts: HashMap<AccountId, Account>,
+    traded_assets: HashMap<AssetId, Asset>,
+    balance_book: BalanceBook,
+    markets: Markets,
+    rx_command_buf: mpsc::Receiver<CommandBufferWithReplyChannel>,
+    session_orders: HashMap<OrderId, PlacedOrder>,
+    transactions_last_100: LocalRb<Heap<Transaction>>,
+    transaction_buf: ObTransactionBuffer,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExchangeHandle {
+    pub tx_command_buf: mpsc::Sender<CommandBufferWithReplyChannel>,
+}
+
+impl ExchangeHandle {
+    pub fn get_client(&self) -> ExchangeClient {
+        ExchangeClient {
+            tx_command_buf: self.tx_command_buf.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
 pub struct Account {
     id: AccountId,
+    username: String,
 }
 
 impl Exchange {
-    pub fn new() -> Self {
-        // Spawn at least one market handler
-        let balance_manager = BalanceManager::new();
-        let tx_blcm_command_buf = balance_manager.tx_command_buf.clone();
-        Exchange {
-            accounts: HashMap::new(),
-            balance_manager: balance_manager,
-            traded_assets: HashMap::new(),
-            market_handlers: MarketHandlers::new(tx_blcm_command_buf),
-        }
+    pub fn new() -> (Self, ExchangeHandle) {
+        let (tx_command_buf, rx_command_buf) = mpsc::channel(MPSC_CAPACITY);
+        (
+            Exchange {
+                accounts: HashMap::new(),
+                traded_assets: HashMap::new(),
+                balance_book: BalanceBook::new(),
+                markets: Markets::new(),
+                session_orders: HashMap::new(),
+                rx_command_buf,
+                transactions_last_100: LocalRb::new(100),
+                transaction_buf: Vec::new(),
+            },
+            ExchangeHandle { tx_command_buf },
+        )
     }
 
-    pub fn with_market_handlers(mut self, n: usize) -> Self {
-        while self.market_handlers.inner.len() < n {
-            let tx_balance_manager = self.balance_manager.tx_command_buf.clone();
-            self.market_handlers.add_handler(tx_balance_manager);
-        }
-        self
-    }
-
-    pub fn get_client(&self) -> ExchangeClient {
-        ExchangeClient {
-            market_handlers: self.market_handlers.clone(),
-            balance_manager: self.balance_manager.clone()
-        }
-    }
-
-    pub async fn add_asset(&mut self, name: &str, symbol: &str) -> AssetId {
-        let new_id = self.balance_manager.add_asset().await;
+    pub fn add_asset(&mut self, name: &str, symbol: &str) -> AssetId {
+        let new_id = self.traded_assets.len() as u32;
         let name = name.to_string();
         let symbol = symbol.to_string();
         let new_asset = Asset {
@@ -153,6 +155,10 @@ impl Exchange {
             symbol,
         };
         self.traded_assets.insert(new_id, new_asset.clone());
+
+        // Update balance book to include new asset
+        self.balance_book.add_asset();
+
         new_id
     }
 
@@ -160,21 +166,36 @@ impl Exchange {
         self.traded_assets.remove(&asset_id);
     }
 
-    pub async fn create_account(&mut self) -> AccountId {
-        let accounts = &mut self.accounts;
-        let new_id = self.balance_manager.add_account().await;
-        accounts.insert(new_id, Account { id: new_id });
+    pub fn create_account(&mut self) -> AccountId {
+        let new_id = self.accounts.len() as AccountId;
+        self.accounts.insert(
+            new_id,
+            Account {
+                id: new_id,
+                username: String::default(),
+            },
+        );
+
+        // Add the account to the balance book
+        self.balance_book.add_account();
+
+        // Return created account id
         new_id
     }
 
-    pub async fn create_market(
-        &mut self,
-        asset_pair: AssetIdPair,
-    ) -> MarketCreationResult {
-        // Only one market allowed per asset pair
-        if self.market_handlers.contains_market(&asset_pair) {
-            return Err(MarketCreationError::MarketAlreadyExists { asset_pair });
-        };
+    pub fn create_account_with_name<S: Into<String>>(&mut self, username: S) -> AccountId {
+        let new_id = self.accounts.len() as AccountId;
+        self.accounts.insert(
+            new_id,
+            Account {
+                id: new_id,
+                username: username.into(),
+            },
+        );
+        new_id
+    }
+
+    pub fn add_market(&mut self, asset_pair: AssetIdPair) -> MarketCreationResult {
         // Market can only be created for listed assets
         if !self.traded_assets.contains_key(&asset_pair.primary) {
             return Err(MarketCreationError::AssetNotTraded {
@@ -186,122 +207,143 @@ impl Exchange {
                 asset: asset_pair.secondary,
             });
         };
-        self.market_handlers.add_market(asset_pair).await
+        self.markets.add_market(asset_pair)
     }
 
-    // pub fn get_last_price(&self, asset_pair: AssetIdPair) -> Option<Price> {
-    //     let market = self.markets.get(&asset_pair)?;
-    //     Some(market.last_traded_price)
-    // }
+    pub fn run(self) {
+        std::thread::spawn(|| self.run_inner());
+    }
 
-    // Creates a new order and starts tracking it.
-    // fn create_order(
-    //     &self,
-    //     account_id: AccountId,
-    //     order_type: OrderType,
-    //     pair: AssetIdPair,
-    //     side: Side,
-    //     volume: Volume,
-    //     price: Price,
-    // ) -> OrderInsertion {
-    //     let new_id = self.session_orders.len();
-    //     let status = OrderExecutionStatus::AwaitingFill;
-    //     let result = OrderInsertion {
-    //         id: new_id,
-    //         account_id,
-    //         order_type,
-    //         pair,
-    //         side,
-    //         volume,
-    //         price,
-    //         status,
-    //     };
-    //     self.session_orders.push(result);
-    //     result
-    // }
-    // pub fn get_account_mut(&mut self, id: &AccountId) -> Option<&mut Account> {
-    //     self.accounts.get_mut(id)
-    // }
+    fn run_inner(mut self) {
+        let mut channel_buf = Vec::with_capacity(MPSC_CAPACITY);
+        loop {
+            // Receive `CommandBuffer`s
+            let n = self
+                .rx_command_buf
+                .blocking_recv_many(&mut channel_buf, MPSC_CAPACITY);
+            if n == 0 {
+                println!("Order channel closed. Shutting down Exchange");
+                break;
+            }
 
-    // /// Insert an order (into the orderbook of the relevant market)
-    // pub async fn insert_order(
-    //     &self,
-    //     account_id: AccountId,
-    //     order_type: OrderType,
-    //     asset_pair: AssetIdPair,
-    //     side: Side,
-    //     volume: Volume,
-    //     price: Price,
-    // ) -> Result<OrderId, OrderInsertionError> {
-    // Check order volume
-    // if volume <= 0 {
-    //     return Err(OrderInsertionError::IllegalParameters);
-    // }
+            // Process command buffers
+            // Use `drain` so that the order of `CommandBuffer`s is maintained
+            for msg in channel_buf.drain(..) {
+                let mut response_buf = VecDeque::with_capacity(msg.command_buf.len());
+                for command in msg.command_buf {
+                    self.handle_command(command, &mut response_buf);
+                }
+                // Send results. Ignore send failures
+                let _ = msg.tx_reply.send(response_buf);
+            }
+        }
+    }
 
-    // Execute order
-    // let order = self.create_order(account_id, order_type, asset_pair, side, volume, price);
-    // let market_handler = self
-    //     .markets
-    //     .get_handler(&asset_pair)
-    //     .ok_or(OrderInsertionError::MarketDoesNotExist)?;
-    // let execution_effects = market_handler.send_order(order).await;
+    fn handle_command(&mut self, command: Command, response_buf: &mut CommandResultBuffer) {
+        let result = match command {
+            Command::OrderInsert(insertion_req) => {
+                let result = self.insert_order(insertion_req);
+                CommandResult::OrderInsert(result)
+            }
+            Command::OrderCancel(cancellation) => {
+                todo!()
+            }
+            Command::OrderModify(modification) => {
+                todo!()
+            }
+            Command::AddMarket(pair) => {
+                println!("Received new market {pair:?}");
+                CommandResult::AddMarket(self.add_market(pair))
+            }
+            Command::GetBalance(account_id, asset_id) => {
+                CommandResult::GetBalance(self.balance_book.get(account_id, asset_id))
+            }
+        };
+        response_buf.push_back(result);
+    }
 
-    // let num_accounts = self.accounts.len();
-    // let balances = &mut self.balances;
-    // for order_change in &self.order_change_buf {
-    // let change_in_primary = Balance::from(order_change.change);
-    // let order_id = order_change.id;
+    fn insert_order(&mut self, insertion_req: OrderInsertionRequest) -> OrderInsertionResult {
+        // Get market (if it exists)
+        let market = self
+            .markets
+            .get_mut(&insertion_req.pair)
+            .ok_or(OrderInsertionError::MarketDoesNotExist)?;
 
-    // let order = self.session_orders.get_mut(order_id).unwrap();
-    // // order.volume -= change;
-    // let asset_pair = order.pair;
-    // let asset_id = match order.side {
-    //     Side::Ask => asset_pair.primary,
-    //     Side::Bid => asset_pair.secondary
-    // };
-    // let change_in_asset = match order.side {
-    //     Side::Ask => change_in_primary,
-    //     Side::Bid => change_in_primary * order.price
-    // };
-    // let balance = balances.get_mut(asset_id, account_id, num_accounts).unwrap();
-    // *balance -= change_in_asset;
+        // Insert order
+        let new_id = self.session_orders.len();
+        let insertion = insertion_req.into_insertion(new_id);
+        let ob_result = market.insert_order(insertion.clone(), &mut self.transaction_buf)?;
 
-    // let asset_id = order.pair;
-    // let from = balance_transfer.from_id;
-    // let to = balance_transfer.to_id;
+        // Insert OpenOrder
+        let open_order = PlacedOrder::from_insertion(&insertion);
+        self.session_orders.insert(new_id, open_order);
 
-    // let from_balance = balances.get_mut(asset_id, from, num_accounts).unwrap();
-    // *from_balance -= balance_transfer.change;
+        // Process transactions resulting from order insertion
+        self.process_transactions(insertion_req.pair);
 
-    // let to_balance = balances.get_mut(asset_id, to, num_accounts).unwrap();
-    // *to_balance += balance_transfer.change;
-    // let primary_change = Balance::from(diff);
-    // let secondary_change = price * (diff as i64);
-    // }
+        Ok(OrderInsertionEffects {
+            id: new_id,
+            status: ob_result.status,
+        })
+    }
 
-    //     Ok(order.id)
-    // }
+    /// Process orders in the
+    fn process_transactions(&mut self, pair: AssetIdPair) {
+        while let Some(transaction) = self.transaction_buf.pop() {
+            let volume_primary = Balance::from(transaction.volume);
+            let volume_secondary = volume_primary * transaction.price;
 
-    // pub fn cancel_order(&mut self, order_id: OrderId) -> OrderCancellationResult {
-    //     let order_ref = self.session_orders.get_mut(order_id)
-    //         .ok_or(OrderCancellationError::OrderDoesNotExist)?;
+            let [maker_order, taker_order] = self
+                .session_orders
+                .get_disjoint_mut([&transaction.order_id_maker, &transaction.order_id_taker])
+                .map(|opt| opt.expect("Order should exist because it is created upon insertion."));
 
-    //     // Any other limit type is not cancellable
-    //     if order_ref.order_type != OrderType::Limit {
-    //         return Err(OrderCancellationError::NotCancellable)
-    //     }
+            // Update order remaining volume
+            maker_order.remaining_volume -= transaction.volume;
+            taker_order.remaining_volume -= transaction.volume;
 
-    //     // Copy order
-    //     let order = order_ref.clone();
+            // Update balances
+            let maker_id = maker_order.account_id;
+            let taker_id = taker_order.account_id;
 
-    //     let pair = order.pair;
-    //     let market = self.markets.get_mut(&pair)
-    //     .ok_or(OrderCancellationError::MarketDoesNotExist)?;
+            let primary = pair.primary;
+            let secondary = pair.secondary;
 
-    //     market.cancel_order(order)?;
+            // Get balances
+            let [
+                balance_primary_maker,
+                balance_primary_taker,
+                balance_secondary_maker,
+                balance_secondary_taker,
+            ] = self
+                .balance_book
+                .get_disjoint_mut([
+                    (primary, maker_id),
+                    (primary, taker_id),
+                    (secondary, maker_id),
+                    (secondary, taker_id),
+                ])
+                .expect("Index overlap is impossible because self-trade returns error in `insert_order`.");
 
-    //     order_ref.status = OrderExecutionStatus::Cancelled;
+            // Update balances
+            match transaction.taker_side {
+                Side::Ask => {
+                    // Taker asks (secondary for primary)
+                    *balance_primary_taker -= volume_primary;
+                    *balance_secondary_taker += volume_secondary;
 
-    //     Ok(())
-    // }
+                    *balance_primary_maker += volume_primary;
+                    *balance_secondary_maker -= volume_secondary;
+                }
+                Side::Bid => {
+                    // Taker bids (secondary for primary)
+                    *balance_primary_taker += volume_primary;
+                    *balance_secondary_taker -= volume_secondary;
+
+                    *balance_primary_maker -= volume_primary;
+                    *balance_secondary_maker += volume_secondary;
+                }
+            }
+        }
+    }
 }

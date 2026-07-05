@@ -1,6 +1,9 @@
 // Capacity for all MPSC channels is set to 32, as this seems to be the sweet-spot for performance.
 pub const MPSC_CAPACITY: usize = 32;
 
+// Shorthand for one Megabyte (2^10 bytes)
+pub const MB: usize = 1048576;
+
 pub static ORDER_PRICES: [u32; 1000] = [
     111, 93, 104, 99, 92, 93, 111, 120, 115, 85, 102, 100, 99, 97, 104, 115, 110, 120, 117, 99, 84,
     94, 85, 80, 104, 98, 83, 90, 83, 87, 80, 89, 103, 83, 85, 91, 113, 98, 82, 95, 83, 91, 83, 95,

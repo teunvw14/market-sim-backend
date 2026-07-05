@@ -4,9 +4,9 @@ use std::collections::{BTreeMap, VecDeque};
 use std::num::NonZero;
 
 use crate::asset::*;
+use crate::market::*;
 use crate::order::*;
 use crate::types::*;
-use crate::market::*;
 
 #[derive(Debug, Clone)]
 pub struct OrderbookEntry {
@@ -15,8 +15,8 @@ pub struct OrderbookEntry {
     pub remaining_volume: Volume,
 }
 
-impl From<OrderInserted> for OrderbookEntry {
-    fn from(order: OrderInserted) -> Self {
+impl From<OrderInsertion> for OrderbookEntry {
+    fn from(order: OrderInsertion) -> Self {
         OrderbookEntry {
             order_id: order.id,
             account_id: order.account_id,
@@ -25,14 +25,7 @@ impl From<OrderInserted> for OrderbookEntry {
     }
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct Orderbook {
-    pub bids: BTreeMap<Price, VecDeque<OrderbookEntry>>,
-    pub asks: BTreeMap<Price, VecDeque<OrderbookEntry>>,
-}
-
 pub struct ObOrderInsertionEffects {
-    pub order_changes: OrderChangeBuffer,
     pub status: OrderExecutionStatus,
     pub last_traded_price: Option<Price>,
 }
@@ -51,6 +44,26 @@ pub struct OrderChange {
 }
 
 pub type OrderChangeBuffer = Vec<OrderChange>;
+
+// Orderbook Transaction type
+#[derive(Debug)]
+/// A transaction between two accounts on a particular pair.
+pub struct ObTransaction {
+    pub price: Price,
+    pub volume: Volume,
+    pub taker_side: Side,
+    pub order_id_maker: OrderId,
+    pub order_id_taker: OrderId,
+}
+
+/// A buffer of transactions resulting from an order insertion
+pub type ObTransactionBuffer = Vec<ObTransaction>;
+
+#[derive(Debug, Clone, Default)]
+pub struct Orderbook {
+    pub bids: BTreeMap<Price, VecDeque<OrderbookEntry>>,
+    pub asks: BTreeMap<Price, VecDeque<OrderbookEntry>>,
+}
 
 impl Orderbook {
     pub fn new() -> Orderbook {
@@ -74,10 +87,10 @@ impl Orderbook {
         Some(first_order)
     }
 
-    pub fn insert_limit_order_no_matching(&mut self, order: OrderInserted) {
+    pub fn insert_limit_order_no_matching(&mut self, order: OrderInsertion) {
         let price = order.price;
         let side = order.side;
-        
+
         let book_side = match side {
             Side::Ask => &mut self.asks,
             Side::Bid => &mut self.bids,
@@ -116,31 +129,32 @@ impl Orderbook {
         Err(OrderCancellationError::AlreadyFilled)
     }
 
-    pub fn insert_order_limit(&mut self, mut order: OrderInserted) -> ObOrderInsertionResult {
+    pub fn insert_order_limit(
+        &mut self,
+        mut order: OrderInsertion,
+        transaction_buf: &mut ObTransactionBuffer,
+    ) -> ObOrderInsertionResult {
         let mut remaining = order.volume;
         let mut last_traded_price = None;
-        let mut order_change_buf = Vec::new();
 
         let side = order.side;
-        let volume = order.volume;
         let price = order.price;
 
         let prices = match side {
             Side::Ask => &mut self.bids,
             Side::Bid => &mut self.asks,
         };
-        fn next_price_orders<'a>(
-            iterator: &'a mut IterMut<Price, VecDeque<OrderbookEntry>>,
-            side: Side,
-        ) -> Option<(&'a Price, &'a mut VecDeque<OrderbookEntry>)> {
-            match side {
-                Side::Ask => iterator.next(),
-                Side::Bid => iterator.next_back(),
-            }
-        }
 
-        while let Some((open_order_price, open_orders)) = next_price_orders(&mut prices.iter_mut(), side)
-        {
+        let mut iterator = prices.iter_mut();
+        let iterator = std::iter::from_fn(move || match side {
+            Side::Ask => iterator.next(),
+            Side::Bid => iterator.next_back(),
+        });
+
+        // Keep track of how many price levels are consumed (and thus need to be deleted)
+        let mut price_level_deletions = 0;
+
+        for (open_order_price, open_orders) in iterator {
             let bid_price_too_high = side == Side::Bid && *open_order_price > price;
             let ask_price_too_low = side == Side::Ask && *open_order_price < price;
             if bid_price_too_high || ask_price_too_low {
@@ -148,14 +162,23 @@ impl Orderbook {
             }
 
             while let Some(open_order) = open_orders.iter_mut().next() {
-                let diff = min(remaining, open_order.remaining_volume);
-                open_order.remaining_volume -= diff;
-                remaining -= diff;
+                let transaction_volume = min(remaining, open_order.remaining_volume);
+                open_order.remaining_volume -= transaction_volume;
+                remaining -= transaction_volume;
 
-                // First OrderChange
-                order_change_buf.push(OrderChange {
-                    id: open_order.order_id,
-                    change: diff,
+                // Check for self-transaction
+                if order.account_id == open_order.account_id {
+                    dbg!("It's a self trade dumbass!");
+                    return Err(OrderInsertionError::SelfTrade);
+                }
+
+                // Push transaction
+                transaction_buf.push(ObTransaction {
+                    price: *open_order_price,
+                    volume: transaction_volume,
+                    taker_side: side,
+                    order_id_maker: open_order.order_id,
+                    order_id_taker: order.id,
                 });
 
                 if open_order.remaining_volume == 0 {
@@ -167,41 +190,40 @@ impl Orderbook {
                     break;
                 }
             }
+
+            // Clean up orderbook
             if open_orders.is_empty() {
-                // Clean up orderbook
-                match side {
-                    Side::Ask => {
-                        prices.pop_first();
-                    }
-                    Side::Bid => {
-                        prices.pop_last();
-                    }
-                }
+                price_level_deletions += 1;
             }
+
             if remaining <= 0 {
                 break;
             }
         }
 
-        // Second order change
-        let volume_filled = volume - remaining;
-        order_change_buf.push(OrderChange {
-            id: order.id,
-            change: volume_filled,
-        });
+        // Clean up orderbook
+        for _ in 0..price_level_deletions {
+            match side {
+                Side::Ask => {
+                    prices.pop_first();
+                }
+                Side::Bid => {
+                    prices.pop_last();
+                }
+            }
+        }
 
         // Enter limit order into orderbook
-        order.volume = remaining;
-        self.insert_limit_order_no_matching(order);
         let status = if remaining > 0 {
+            order.volume = remaining;
+            self.insert_limit_order_no_matching(order);
             OrderExecutionStatus::AwaitingFill
         } else {
             OrderExecutionStatus::Filled
         };
         Ok(ObOrderInsertionEffects {
-            order_changes: order_change_buf,
             last_traded_price,
-            status
+            status,
         })
     }
 

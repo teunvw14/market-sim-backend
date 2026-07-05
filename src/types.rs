@@ -1,7 +1,5 @@
 use fixed::types::*;
 
-use crate::orderbook::OrderChange;
-
 pub type OrderId = usize;
 pub type AssetId = u32;
 pub type AccountId = u32;
