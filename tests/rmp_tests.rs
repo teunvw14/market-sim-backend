@@ -37,8 +37,6 @@ fn command_buffer_order_insert() {
     });
     let command_buf: CommandBuffer = vec![order_insert; 128].into();
     let serialized = rmp_serde::to_vec(&command_buf).unwrap();
-    let num_bytes = serialized.len();
-    println!("bytes: {num_bytes}");
     let deserialized: CommandBuffer = rmp_serde::decode::from_slice(&serialized).unwrap();
-    assert!(deserialized == command_buf);
+    assert_eq!(deserialized, command_buf);
 }

@@ -5,10 +5,16 @@ use tracing::debug;
 
 use crate::exchange::CommandBuffer;
 
-/// Encoder for turning a Exchange::CommandBuffer into MessagePack formatted bytes. 
-pub struct MpCommandEncoder {}
+/// Codec for generating frames of Exchange::CommandBuffer encoded with MessagePack from raw bytes.
+pub struct MpCommandCodec {}
 
-impl<Item: Serialize> Encoder<Item> for MpCommandEncoder {
+impl MpCommandCodec {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+impl<Item: Serialize> Encoder<Item> for MpCommandCodec {
     type Error = std::io::Error;
     fn encode(&mut self, item: Item, dst: &mut BytesMut) -> Result<(), Self::Error> {
         let mp_encoded = rmp_serde::to_vec(&item)
@@ -24,12 +30,9 @@ impl<Item: Serialize> Encoder<Item> for MpCommandEncoder {
     }
 }
 
-/// Decoder for generating frames of Exchange::CommandBuffer encoded with MessagePack from raw bytes.
-pub struct MpCommandDecoder {}
-
 // Adapted from the docs at
 // https://docs.rs/tokio-util/latest/tokio_util/codec/index.html#example-decoder
-impl Decoder for MpCommandDecoder {
+impl Decoder for MpCommandCodec {
     type Item = CommandBuffer;
     type Error = std::io::Error;
 
@@ -48,7 +51,6 @@ impl Decoder for MpCommandDecoder {
         // Reserve more space in the buffer if the whole command hasn't arrived yet
         if src.len() < 2 + length {
             let bytes_to_receive = 2 + length - src.len();
-            debug!("bytes to receive: {bytes_to_receive}");
             src.reserve(bytes_to_receive);
 
             // Frame isn't fully available yet, so return Ok(None) as required by spec.

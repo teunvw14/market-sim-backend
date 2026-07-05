@@ -1,0 +1,143 @@
+# AI generated (Claude)! Not mine
+
+"""
+Sends OrderInsert commands to the exchange server every second, for pair (0, 1),
+alternating between account 0 (always Ask) and account 1 (always Bid).
+Price is normally distributed around 100, volume is random.
+
+Wire format (reverse-engineered from the Rust protocol):
+  - Frame:   2-byte big-endian length prefix + MessagePack payload  (MpCommandEncoder)
+  - Payload: CommandBuffer = array of Command
+  - Command: externally-tagged enum -> {"OrderInsert": [fields...]}
+             fields serialized positionally (rmp_serde's default "compact" struct mode)
+  - Unit enum variants (OrderType::Limit, Side::Ask/Bid) -> plain strings
+  - Price (I33F31, 31 fractional bits) -> the `fixed` crate serializes this as a
+    1-element array containing the raw bits (value * 2**31). Confirmed against the
+    sample bytes in the prompt: Price::ONE -> [2147483648] == [1 * 2**31].
+
+Requires: pip install msgpack
+"""
+
+import socket
+import struct
+import time
+import random
+import msgpack
+
+HOST = "127.0.0.1"
+PORT = 5555
+
+PAIR = (0, 1)          # (primary, secondary) asset ids
+PRICE_MEAN = 100.0
+PRICE_STDDEV = 2.0      # adjust to taste
+VOLUME_MIN = 1
+VOLUME_MAX = 20
+SEND_INTERVAL_SECONDS = 1.0
+
+ORDERS_PER_SEND = 32
+
+FRAC_BITS = 31          # I33F31 -> 31 fractional bits
+PRICE_SCALE = 2 ** FRAC_BITS
+
+
+def encode_price(value: float) -> list:
+    """Encode a float as the raw fixed-point bits (I33F31), matching the
+    `fixed` crate's non-human-readable msgpack representation: a 1-element array."""
+    bits = int(round(value * PRICE_SCALE))
+    return [bits]
+
+
+def make_order_insert(account_id: int, side: str, price: float, volume: int) -> dict:
+    primary, secondary = PAIR
+    return {
+        "OrderInsert": [
+            account_id,           # account_id: u32
+            "Limit",              # order_type: OrderType::Limit
+            [primary, secondary], # pair: AssetIdPair { primary, secondary }
+            side,                 # side: "Ask" | "Bid"
+            volume,                # volume: u32
+            encode_price(price),  # price: I33F31 -> [bits]
+        ]
+    }
+
+
+def encode_command_buffer(commands: list) -> bytes:
+    """Pack a list of commands into a length-prefixed MessagePack frame,
+    matching MpCommandEncoder: 2-byte big-endian length + msgpack bytes."""
+    payload = msgpack.packb(commands, use_bin_type=True)
+    if len(payload) > 0xFFFF:
+        raise ValueError("Message too long!")
+    return struct.pack(">H", len(payload)) + payload
+
+
+def recv_exact(sock: socket.socket, n: int) -> bytes:
+    """Read exactly n bytes from the socket, looping over recv() since a single
+    call isn't guaranteed to return all of them. Raises ConnectionError if the
+    peer closes the connection before n bytes arrive."""
+    chunks = []
+    remaining = n
+    while remaining > 0:
+        chunk = sock.recv(remaining)
+        if not chunk:
+            raise ConnectionError("Server closed the connection while reading a frame")
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
+def recv_frame(sock: socket.socket) -> bytes:
+    """Read one length-prefixed frame and return the raw MessagePack payload
+    (undecoded) — mirrors the decoder side of the protocol: 2-byte big-endian
+    length prefix, then that many bytes of MessagePack-encoded response."""
+    length_bytes = recv_exact(sock, 2)
+    (length,) = struct.unpack(">H", length_bytes)
+    return recv_exact(sock, length)
+
+
+def main():
+    sock = socket.create_connection((HOST, PORT), timeout=5)
+    sock.settimeout(5)  # so sendall() can't block forever if the server stops reading
+    print(f"Connected to {HOST}:{PORT}")
+
+    start = time.time()
+    total_inserted = 0
+
+    ask_turn = True  # alternate: True -> account 0 / Ask, False -> account 1 / Bid
+    try:
+        while True:        
+            if ask_turn:
+                account_id, side = 0, "Ask"
+            else:
+                account_id, side = 1, "Bid"
+
+            commands = []
+            for i in range(ORDERS_PER_SEND):
+                price = random.gauss(PRICE_MEAN, PRICE_STDDEV)
+                volume = random.randint(VOLUME_MIN, VOLUME_MAX)
+                commands.append(make_order_insert(account_id, side, price, volume))
+
+            frame = encode_command_buffer(commands)
+
+            sock.sendall(frame)
+            # print(f"Sent {side:<3} orders account={account_id}")
+
+            response_bytes = recv_frame(sock)
+            # print(f"  -> raw response ({len(response_bytes)} bytes): {response_bytes}")
+
+            ask_turn = not ask_turn
+            total_inserted += ORDERS_PER_SEND
+            # time.sleep(SEND_INTERVAL_SECONDS)
+    except KeyboardInterrupt:
+        elapsed = time.time() - start
+        print(f"\nRate: {total_inserted/elapsed} | Sent {total_inserted} orders in {elapsed}")
+        print("Stopping.")
+    except socket.timeout:
+        print("\nSocket timed out (server not reading/responding) — exiting.")
+    except ConnectionError as e:
+        print(f"\n{e}")
+    finally:
+        sock.close()
+
+
+if __name__ == "__main__":
+    main()

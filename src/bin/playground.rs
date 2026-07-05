@@ -1,5 +1,5 @@
 use backend::{
-    asset::*, exchange::*, exchange_configs, mp_command_encoding::{MpCommandDecoder, MpCommandEncoder}, order::*, statics::*, types::*,
+    asset::*, exchange::*, exchange_configs, mp_command_encoding::{MpCommandCodec}, order::*, statics::*, types::*,
 };
 use bytes::{Bytes, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
@@ -18,15 +18,14 @@ fn main() {
     });
     let command_buf = vec![command; 2];
 
-    let mut decoder = MpCommandDecoder {};
-    let mut encoder = MpCommandEncoder {};
+    let mut codec = MpCommandCodec {};
 
     let mut bytes = BytesMut::new();
-    encoder.encode(&command_buf, &mut bytes).unwrap();
+    codec.encode(&command_buf, &mut bytes).unwrap();
     println!("Encoded bytes: {bytes:?}");
     let bytes_vec = bytes.to_vec();
     println!("Encoded bytes (vec): {bytes_vec:?}");
 
-    let bytes_decoded = decoder.decode(&mut bytes).unwrap().unwrap();
+    let bytes_decoded = codec.decode(&mut bytes).unwrap().unwrap();
     println!("Decoded bytes: {bytes_decoded:?}")
 }

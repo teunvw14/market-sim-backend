@@ -47,9 +47,11 @@ async fn buy_sell() {
     // Confirm that trades swapped the two assets equally
     let bal_primary_1 = client.get_balance(acc_id_1, pair.primary).await.unwrap();
     let bal_primary_2 = client.get_balance(acc_id_2, pair.primary).await.unwrap();
-    assert!(bal_primary_1 == -1 * bal_primary_2);
+    assert_eq!(bal_primary_1, -1 * bal_primary_2);
 
     let bal_secondary_1 = client.get_balance(acc_id_1, pair.secondary).await.unwrap();
     let bal_secondary_2 = client.get_balance(acc_id_2, pair.secondary).await.unwrap();
-    assert!(bal_secondary_1 == -1 * bal_secondary_2);
+    assert_eq!(bal_secondary_1, -1 * bal_secondary_2);
+
+    assert_eq!(bal_secondary_2, -Price::lit("0.85") * 5 + -Price::lit("0.86") * 5);
 }

@@ -8,14 +8,15 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
 };
-use tokio_util::codec::FramedRead;
+use tokio_util::codec::{Framed, FramedRead};
 use tokio_stream::StreamExt;
+use futures_util::sink::SinkExt;
 use tracing::{Level, debug, info, warn, error};
 use tracing_subscriber::FmtSubscriber;
 
 use num_format::{CustomFormat, ToFormattedString};
 
-use backend::{asset::*, exchange::*, exchange_configs, mp_command_encoding::MpCommandDecoder, order::*, statics::*, types::*};
+use backend::{asset::*, exchange::*, exchange_configs, mp_command_encoding::{MpCommandCodec}, order::*, statics::*, types::*};
 
 // Default, should be made configurable. Connections < 100 makes this a
 // reasonable default.
@@ -30,29 +31,23 @@ async fn handle_connection(
 ) {
     info!("New connection: {addr}");
 
-    let command_decoder = MpCommandDecoder {};
-    let mut frame_reader = FramedRead::with_capacity(stream, command_decoder, BUFFER_SIZE);
-
-    // Initialize read buffer
-    // let mut buf = BytesMut::with_capacity(BUFFER_SIZE);
+    let command_codec = MpCommandCodec::new();
+    let mut framed_stream = Framed::with_capacity(stream, command_codec, buffer_size);
 
     loop {
-        // if frame_reader.readable().await.is_err() {
-        //     continue;
-        // }
-        match frame_reader.next().await {
+        match framed_stream.next().await {
             None => {
                 info!("Disconnected: {addr}");
                 break;
             }
             Some(Err(e)) => {
-                info!("Disconnecting {addr} due to error: {e}");
+                info!("Disconnecting {addr} due to error: '{e}'");
                 break;
             }
             Some(Ok(decoded_commands)) => {
-                // Insert commands but ignore for now
-                debug!("Received commands: {decoded_commands:?}");
-                let _res = client.send_commands(decoded_commands).await;
+                // Insert commands and send result
+                let res = client.send_commands(decoded_commands).await;
+                framed_stream.send(res).await.unwrap();
             }
         }
     }
@@ -67,12 +62,14 @@ async fn main() {
     tracing::subscriber::set_global_default(subscriber)
         .expect("Tracing subscriber should be set successfully.");
 
+    
     // Initialize Exchange and TcpListener
     let (exchange_handle, pair, id1, id2) = exchange_configs::exchange_eur_usd_market_2_accs().await;
-    println!("id1: {id1:?}");
-    println!("pair: {pair:?}");
-    let listener = TcpListener::bind("127.0.0.1:5555").await.unwrap();
-
+    let bind_addr = "127.0.0.1:5555";
+    let listener = TcpListener::bind(bind_addr).await.unwrap();
+    
+    info!("Exchange server started and listening at {bind_addr}.");
+    
     // Run core loop
     loop {
         if let Ok((stream, addr)) = listener.accept().await {

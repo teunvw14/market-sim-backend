@@ -1,11 +1,16 @@
+# Quick and dirty script to automatically start the server every time the source
+# code is changed.
+
 import subprocess
 from pathlib import Path
 import glob
 import os
 import time
 
+RUN_COMMAND = ["cargo","run", "--release"]
+
 def main():
-    proc = subprocess.Popen(["cargo","run", "--release"])
+    proc = subprocess.Popen(RUN_COMMAND)
     files = list(Path("./src/").rglob("*.rs"))
     
     time_last_changes = {}

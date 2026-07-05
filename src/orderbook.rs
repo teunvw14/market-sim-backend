@@ -3,6 +3,8 @@ use std::collections::btree_map::IterMut;
 use std::collections::{BTreeMap, VecDeque};
 use std::num::NonZero;
 
+use tracing::debug;
+
 use crate::asset::*;
 use crate::market::*;
 use crate::order::*;
@@ -73,20 +75,7 @@ impl Orderbook {
         }
     }
 
-    pub fn get_best_bid(&mut self) -> Option<OrderbookEntry> {
-        let mut orders_entry = self.bids.first_entry()?;
-        let orders = orders_entry.get_mut();
-
-        let first_order = orders.pop_front()?;
-        Some(first_order)
-    }
-
-    pub fn get_best_ask(&mut self) -> Option<OrderbookEntry> {
-        let (_price, mut orders) = self.asks.pop_first()?;
-        let first_order = orders.pop_front()?;
-        Some(first_order)
-    }
-
+    /// Insert an order into the OrderBook without matching (i.e. without generating transactions)
     pub fn insert_limit_order_no_matching(&mut self, order: OrderInsertion) {
         let price = order.price;
         let side = order.side;
@@ -95,17 +84,11 @@ impl Orderbook {
             Side::Ask => &mut self.asks,
             Side::Bid => &mut self.bids,
         };
-        let first_entry_opt = match side {
-            Side::Ask => book_side.first_entry(),
-            Side::Bid => book_side.last_entry(),
+
+        match book_side.get_mut(&price) {
+            None => { book_side.insert(price, VecDeque::from([order.into()])); },
+            Some(orders_at_price) => { orders_at_price.push_back(order.into()); },
         };
-        if first_entry_opt.is_none() {
-            book_side.insert(price, VecDeque::from([order.into()]));
-        } else {
-            let mut first_entry = first_entry_opt.unwrap();
-            let orders_at_price = first_entry.get_mut();
-            orders_at_price.push_back(order.into());
-        }
     }
 
     pub fn cancel_order(&mut self, cancellation: OrderCancellation) -> OrderCancellationResult {
@@ -147,8 +130,8 @@ impl Orderbook {
 
         let mut iterator = prices.iter_mut();
         let iterator = std::iter::from_fn(move || match side {
-            Side::Ask => iterator.next(),
-            Side::Bid => iterator.next_back(),
+            Side::Ask => iterator.next_back(), // prices = self.bids, so get highest
+            Side::Bid => iterator.next(),      // prices = self.asks, so get lowest
         });
 
         // Keep track of how many price levels are consumed (and thus need to be deleted)
@@ -168,7 +151,7 @@ impl Orderbook {
 
                 // Check for self-transaction
                 if order.account_id == open_order.account_id {
-                    dbg!("It's a self trade dumbass!");
+                    debug!("Self trade!!!!!");
                     return Err(OrderInsertionError::SelfTrade);
                 }
 
@@ -204,11 +187,11 @@ impl Orderbook {
         // Clean up orderbook
         for _ in 0..price_level_deletions {
             match side {
-                Side::Ask => {
-                    prices.pop_first();
-                }
-                Side::Bid => {
+                Side::Ask => { // prices = self.bids, so remove highest
                     prices.pop_last();
+                }
+                Side::Bid => { // prices = self.bids, so remove highest
+                    prices.pop_first();
                 }
             }
         }
