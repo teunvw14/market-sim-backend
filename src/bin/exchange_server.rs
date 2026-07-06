@@ -1,31 +1,24 @@
-use bytes::BytesMut;
-use futures_util::sink::SinkExt;
-use std::{
-    io,
-    net::SocketAddr,
-    time::{Duration, Instant},
-};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
-};
-use tokio_stream::StreamExt;
-use tokio_util::codec::{Framed, FramedRead};
-use tracing::{Level, debug, error, info, warn};
-use tracing_subscriber::FmtSubscriber;
+use std::net::SocketAddr;
 
-use num_format::{CustomFormat, ToFormattedString};
+use tokio::net::{TcpListener, TcpStream};
+use tokio_stream::StreamExt;
+use tokio_util::codec::Framed;
+use tracing::{Level, info};
+use tracing_subscriber::FmtSubscriber;
+use futures_util::sink::SinkExt;
 
 use backend::{
-    asset::*, exchange::*, exchange_configs, mp_command_encoding::MpCommandCodec, order::*,
-    statics::*, types::*,
+    exchange::*, 
+    exchange_configs, 
+    mp_command_encoding::MpCommandCodec, 
+    statics::*
 };
 
-// Default, should be made configurable. Connections < 100 makes this a
-// reasonable default.
+// Connections < 100 makes this reasonable.
+// TODO: make configurable
 const BUFFER_SIZE: usize = MB / 2;
 
-/// Handle connections reading and writing
+/// Handle a connection to the exchange server.
 async fn handle_connection(
     stream: TcpStream,
     addr: SocketAddr,
@@ -56,6 +49,7 @@ async fn handle_connection(
     }
 }
 
+/// FmtSubscriber for debug builds
 #[cfg(debug_assertions)]
 fn get_tracing_subscriber() -> FmtSubscriber {
     FmtSubscriber::builder()
@@ -63,6 +57,7 @@ fn get_tracing_subscriber() -> FmtSubscriber {
         .finish()
 }
 
+/// FmtSubscriber for non-debug builds
 #[cfg(not(debug_assertions))]
 fn get_tracing_subscriber() -> FmtSubscriber {
     FmtSubscriber::builder()
@@ -78,15 +73,16 @@ async fn main() {
         .expect("Tracing subscriber should be set successfully.");
 
     // Initialize Exchange and TcpListener
-    let (exchange_handle, pair, id1, id2) =
+    let (exchange_handle, _pair, _id1, _id2) =
         exchange_configs::exchange_eur_usd_market_2_accs().await;
     let bind_addr = "127.0.0.1:5555";
     let listener = TcpListener::bind(bind_addr).await.unwrap();
 
+    // Clear terminal screen and reset cursor to (1, 1), then print start message
     print!("\x1B[2J\x1b[1;1H");
     info!("Exchange server started and listening at {bind_addr}.");
 
-    // Run core loop
+    // Run core loop, spawning a Tokio `Task` for each connection
     loop {
         if let Ok((stream, addr)) = listener.accept().await {
             let exchange_client = exchange_handle.get_client();

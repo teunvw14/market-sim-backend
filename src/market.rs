@@ -33,7 +33,7 @@ pub struct OrderInsertionEffects {
     pub status: OrderExecutionStatus,
 }
 
-#[derive(Debug, Clone, Copy, Default,PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize)]
 pub enum OrderExecutionStatus {
     #[default]
     AwaitingFill,

@@ -1,19 +1,19 @@
 use std::collections::HashMap;
 use std::collections::VecDeque;
 
-use ringbuf::{LocalRb, storage::Heap, traits::*};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
 use tracing::debug;
-use tracing::trace;
 
-use crate::asset::*;
-use crate::balance_book::BalanceBook;
-use crate::market::*;
-use crate::order::*;
-use crate::orderbook::*;
-use crate::statics::MPSC_CAPACITY;
-use crate::types::*;
+use crate::{
+    asset::*,
+    balance_book::BalanceBook,
+    market::*,
+    order::*,
+    orderbook::*,
+    statics::MPSC_CAPACITY,
+    types::*,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum Command {
@@ -106,7 +106,6 @@ pub struct Exchange {
     markets: Markets,
     rx_command_buf: mpsc::Receiver<CommandBufferWithReplyChannel>,
     session_orders: HashMap<OrderId, PlacedOrder>,
-    transactions_last_100: LocalRb<Heap<Transaction>>,
     transaction_buf: ObTransactionBuffer,
 }
 
@@ -140,7 +139,6 @@ impl Exchange {
                 markets: Markets::new(),
                 session_orders: HashMap::new(),
                 rx_command_buf,
-                transactions_last_100: LocalRb::new(100),
                 transaction_buf: Vec::new(),
             },
             ExchangeHandle { tx_command_buf },
@@ -368,11 +366,10 @@ impl Exchange {
 
         if order.status == OrderExecutionStatus::Cancelled {
             return Err(OrderCancellationError::AlreadyCancelled);
-        }
-        else if order.status == OrderExecutionStatus::Filled {
+        } else if order.status == OrderExecutionStatus::Filled {
             return Err(OrderCancellationError::AlreadyFilled);
         }
-        
+
         debug!("Cancelling order {order:?}");
 
         // Get market (if it exists - it really should)

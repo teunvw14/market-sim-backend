@@ -1,7 +1,6 @@
 use bytes::{Buf, BytesMut};
 use serde::Serialize;
 use tokio_util::codec::{Decoder, Encoder};
-use tracing::debug;
 
 use crate::exchange::CommandBuffer;
 

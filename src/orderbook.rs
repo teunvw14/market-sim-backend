@@ -1,14 +1,13 @@
 use std::cmp::min;
-use std::collections::btree_map::IterMut;
 use std::collections::{BTreeMap, VecDeque};
-use std::num::NonZero;
 
 use tracing::debug;
 
-use crate::asset::*;
-use crate::market::*;
-use crate::order::*;
-use crate::types::*;
+use crate::{
+    market::*,
+    order::*,
+    types::*,
+};
 
 #[derive(Debug, Clone)]
 pub struct OrderbookEntry {

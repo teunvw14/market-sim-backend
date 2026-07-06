@@ -1,3 +1,9 @@
+// This file is used for checking behavior of code during development and not
+// and actual release target.
+
+// Since this will never be an actual binary, allow unused imports.
+#![allow(unused_imports)]
+
 use backend::{
     asset::*, exchange::*, exchange_configs, mp_command_encoding::MpCommandCodec, order::*,
     statics::*, types::*,

@@ -1,6 +1,4 @@
 use backend::{asset::AssetIdPair, exchange::*, exchange_configs::*, order::*, types::*};
-use rmp_serde::{Deserializer, Serializer};
-use serde::Serialize;
 
 #[test]
 fn command_get_balance() {
