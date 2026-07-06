@@ -1,6 +1,6 @@
 use bytes::{Buf, BytesMut};
 use serde::Serialize;
-use tokio_util::codec::{Decoder, Encoder };
+use tokio_util::codec::{Decoder, Encoder};
 use tracing::debug;
 
 use crate::exchange::CommandBuffer;
@@ -20,7 +20,10 @@ impl<Item: Serialize> Encoder<Item> for MpCommandCodec {
         let mp_encoded = rmp_serde::to_vec(&item)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         if mp_encoded.len() > u16::MAX as usize {
-            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Message too long!"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Message too long!",
+            ));
         }
         let len_bytes = (mp_encoded.len() as u16).to_be_bytes();
         dst.extend_from_slice(&len_bytes);

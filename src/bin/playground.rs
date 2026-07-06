@@ -1,5 +1,6 @@
 use backend::{
-    asset::*, exchange::*, exchange_configs, mp_command_encoding::{MpCommandCodec}, order::*, statics::*, types::*,
+    asset::*, exchange::*, exchange_configs, mp_command_encoding::MpCommandCodec, order::*,
+    statics::*, types::*,
 };
 use bytes::{Bytes, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};

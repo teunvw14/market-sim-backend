@@ -87,7 +87,24 @@ impl Display for OrderInsertion {
 /// OderCancellationRequest is how a request to cancel an order is received. Needs to be transformed into an OrderCancellation to be efficiently removed from an Orderbook.
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OrderCancellationRequest {
+    pub account_id: AccountId,
     pub order_id: OrderId,
+}
+
+impl OrderCancellationRequest {
+    pub fn into_cancellation(
+        self,
+        pair: AssetIdPair,
+        side: Side,
+        price: Price,
+    ) -> OrderCancellation {
+        OrderCancellation {
+            pair,
+            order_id: self.order_id,
+            side,
+            price,
+        }
+    }
 }
 
 /// OderCancellation encapsulates the information needed to remove an order efficiently.

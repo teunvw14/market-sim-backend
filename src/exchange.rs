@@ -4,6 +4,7 @@ use std::collections::VecDeque;
 use ringbuf::{LocalRb, storage::Heap, traits::*};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
+use tracing::debug;
 use tracing::trace;
 
 use crate::asset::*;
@@ -247,7 +248,8 @@ impl Exchange {
                 CommandResult::OrderInsert(result)
             }
             Command::OrderCancel(cancellation) => {
-                todo!()
+                let result = self.cancel_order(cancellation);
+                CommandResult::OrderCancel(result)
             }
             Command::OrderModify(modification) => {
                 todo!()
@@ -278,6 +280,7 @@ impl Exchange {
         // Insert OpenOrder
         let open_order = PlacedOrder::from_insertion(&insertion);
         self.session_orders.insert(new_id, open_order);
+        debug!("Inserted order {insertion}");
 
         // Process transactions resulting from order insertion
         self.process_transactions(insertion_req.pair);
@@ -291,6 +294,7 @@ impl Exchange {
     /// Process orders in the
     fn process_transactions(&mut self, pair: AssetIdPair) {
         while let Some(transaction) = self.transaction_buf.pop() {
+            debug!("New transaction: {transaction:?}");
             let volume_primary = Balance::from(transaction.volume);
             let volume_secondary = volume_primary * transaction.price;
 
@@ -346,5 +350,44 @@ impl Exchange {
                 }
             }
         }
+    }
+
+    fn cancel_order(
+        &mut self,
+        cancellation_req: OrderCancellationRequest,
+    ) -> OrderCancellationResult {
+        // Look up order
+        let order = self
+            .session_orders
+            .get_mut(&cancellation_req.order_id)
+            .ok_or(OrderCancellationError::OrderDoesNotExist)?;
+
+        if order.account_id != cancellation_req.account_id {
+            return Err(OrderCancellationError::UnAuthorized);
+        }
+
+        if order.status == OrderExecutionStatus::Cancelled {
+            return Err(OrderCancellationError::AlreadyCancelled);
+        }
+        else if order.status == OrderExecutionStatus::Filled {
+            return Err(OrderCancellationError::AlreadyFilled);
+        }
+        
+        debug!("Cancelling order {order:?}");
+
+        // Get market (if it exists - it really should)
+        let market = self
+            .markets
+            .get_mut(&order.pair)
+            .ok_or(OrderCancellationError::MarketDoesNotExist)?;
+
+        let cancellation = cancellation_req.into_cancellation(order.pair, order.side, order.price);
+        let result = market.cancel_order(cancellation);
+
+        if result.is_ok() {
+            order.status = OrderExecutionStatus::Cancelled;
+        }
+
+        result
     }
 }

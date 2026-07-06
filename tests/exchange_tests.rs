@@ -53,5 +53,8 @@ async fn buy_sell() {
     let bal_secondary_2 = client.get_balance(acc_id_2, pair.secondary).await.unwrap();
     assert_eq!(bal_secondary_1, -1 * bal_secondary_2);
 
-    assert_eq!(bal_secondary_2, -Price::lit("0.85") * 5 + -Price::lit("0.86") * 5);
+    assert_eq!(
+        bal_secondary_2,
+        -Price::lit("0.85") * 5 + -Price::lit("0.86") * 5
+    );
 }

@@ -6,11 +6,16 @@ from pathlib import Path
 import glob
 import os
 import time
+import sys
 
-RUN_COMMAND = ["cargo","run", "--release"]
 
 def main():
-    proc = subprocess.Popen(RUN_COMMAND)
+    # Run in release mode by default unless a --debug flag is given
+    run_command = ["cargo","run", "--release"]
+    if "--debug" in sys.argv:
+        run_command = ["cargo","run"]
+
+    proc = subprocess.Popen(run_command)
     files = list(Path("./src/").rglob("*.rs"))
     
     time_last_changes = {}
@@ -24,7 +29,7 @@ def main():
                 print("aaaaaa")
                 time_last_changes[file] = new_last_changed
                 proc.terminate()
-                proc = subprocess.Popen(["cargo","run", "--release"])
+                proc = subprocess.Popen(run_command)
         time.sleep(0.5)
 
 if __name__ == "__main__":

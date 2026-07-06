@@ -1,22 +1,25 @@
+use bytes::BytesMut;
+use futures_util::sink::SinkExt;
 use std::{
     io,
     net::SocketAddr,
     time::{Duration, Instant},
 };
-use bytes::BytesMut;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
 };
-use tokio_util::codec::{Framed, FramedRead};
 use tokio_stream::StreamExt;
-use futures_util::sink::SinkExt;
-use tracing::{Level, debug, info, warn, error};
+use tokio_util::codec::{Framed, FramedRead};
+use tracing::{Level, debug, error, info, warn};
 use tracing_subscriber::FmtSubscriber;
 
 use num_format::{CustomFormat, ToFormattedString};
 
-use backend::{asset::*, exchange::*, exchange_configs, mp_command_encoding::{MpCommandCodec}, order::*, statics::*, types::*};
+use backend::{
+    asset::*, exchange::*, exchange_configs, mp_command_encoding::MpCommandCodec, order::*,
+    statics::*, types::*,
+};
 
 // Default, should be made configurable. Connections < 100 makes this a
 // reasonable default.
@@ -53,23 +56,36 @@ async fn handle_connection(
     }
 }
 
+#[cfg(debug_assertions)]
+fn get_tracing_subscriber() -> FmtSubscriber {
+    FmtSubscriber::builder()
+        .with_max_level(Level::TRACE)
+        .finish()
+}
+
+#[cfg(not(debug_assertions))]
+fn get_tracing_subscriber() -> FmtSubscriber {
+    FmtSubscriber::builder()
+        .with_max_level(Level::INFO)
+        .finish()
+}
+
 #[tokio::main]
 async fn main() {
     // Set up `tracing`
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::TRACE)
-        .finish();
+    let subscriber = get_tracing_subscriber();
     tracing::subscriber::set_global_default(subscriber)
         .expect("Tracing subscriber should be set successfully.");
 
-    
     // Initialize Exchange and TcpListener
-    let (exchange_handle, pair, id1, id2) = exchange_configs::exchange_eur_usd_market_2_accs().await;
+    let (exchange_handle, pair, id1, id2) =
+        exchange_configs::exchange_eur_usd_market_2_accs().await;
     let bind_addr = "127.0.0.1:5555";
     let listener = TcpListener::bind(bind_addr).await.unwrap();
-    
+
+    print!("\x1B[2J\x1b[1;1H");
     info!("Exchange server started and listening at {bind_addr}.");
-    
+
     // Run core loop
     loop {
         if let Ok((stream, addr)) = listener.accept().await {

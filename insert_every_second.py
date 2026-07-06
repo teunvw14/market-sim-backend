@@ -2,18 +2,24 @@
 
 """
 Sends OrderInsert commands to the exchange server every second, for pair (0, 1),
-alternating between account 0 (always Ask) and account 1 (always Bid).
+alternating between account 0 (always Ask) and account 1 (always Bid). Occasionally
+sends an OrderCancel for a previously placed order instead of inserting.
 Price is normally distributed around 100, volume is random.
 
 Wire format (reverse-engineered from the Rust protocol):
   - Frame:   2-byte big-endian length prefix + MessagePack payload  (MpCommandEncoder)
   - Payload: CommandBuffer = array of Command
-  - Command: externally-tagged enum -> {"OrderInsert": [fields...]}
+  - Command: externally-tagged enum -> {"OrderInsert": [fields...]} / {"OrderCancel": [fields...]}
              fields serialized positionally (rmp_serde's default "compact" struct mode)
   - Unit enum variants (OrderType::Limit, Side::Ask/Bid) -> plain strings
   - Price (I33F31, 31 fractional bits) -> the `fixed` crate serializes this as a
     1-element array containing the raw bits (value * 2**31). Confirmed against the
     sample bytes in the prompt: Price::ONE -> [2147483648] == [1 * 2**31].
+
+Order ID tracking: this script ASSUMES it is the only client submitting orders, and
+that the server assigns OrderId starting at 0 and incrementing by 1 for every
+OrderInsert it processes. If another client is also submitting orders concurrently,
+this local numbering will drift out of sync with the server's real IDs.
 
 Requires: pip install msgpack
 """
@@ -29,12 +35,13 @@ PORT = 5555
 
 PAIR = (0, 1)          # (primary, secondary) asset ids
 PRICE_MEAN = 100.0
-PRICE_STDDEV = 2.0      # adjust to taste
-VOLUME_MIN = 1
-VOLUME_MAX = 20
-SEND_INTERVAL_SECONDS = 1.0
+PRICE_STDDEV = 10.0     # adjust to taste
+VOLUME_MIN = 5
+VOLUME_MAX = 500
+SEND_INTERVAL_SECONDS = 0.25
 
-ORDERS_PER_SEND = 32
+ORDERS_PER_SEND = 1
+CANCEL_PROBABILITY = 0.2  # chance, each iteration, of attempting a cancel instead of an insert
 
 FRAC_BITS = 31          # I33F31 -> 31 fractional bits
 PRICE_SCALE = 2 ** FRAC_BITS
@@ -57,6 +64,15 @@ def make_order_insert(account_id: int, side: str, price: float, volume: int) -> 
             side,                 # side: "Ask" | "Bid"
             volume,                # volume: u32
             encode_price(price),  # price: I33F31 -> [bits]
+        ]
+    }
+
+
+def make_order_cancel(account_id: int, order_id: int) -> dict:
+    return {
+        "OrderCancel": [
+            account_id,  # account_id: u32
+            order_id,    # order_id: usize (plain int, not fixed-point, so unwrapped)
         ]
     }
 
@@ -101,35 +117,61 @@ def main():
 
     start = time.time()
     total_inserted = 0
+    total_cancel_attempts = 0
+
+    next_order_id = 0          # client-side tracking of the next OrderId the server will assign
+    open_orders = []           # list of (order_id, account_id) for orders placed but not yet cancel-attempted
 
     ask_turn = True  # alternate: True -> account 0 / Ask, False -> account 1 / Bid
     try:
-        while True:        
-            if ask_turn:
-                account_id, side = 0, "Ask"
+        while True:
+            attempt_cancel = open_orders and random.random() < CANCEL_PROBABILITY
+
+            if attempt_cancel:
+                idx = random.randrange(len(open_orders))
+                order_id, account_id = open_orders.pop(idx)
+
+                command = make_order_cancel(account_id, order_id)
+                frame = encode_command_buffer([command])
+
+                sock.sendall(frame)
+                print(f"Sent OrderCancel  account={account_id}  order_id={order_id}")
+
+                total_cancel_attempts += 1
             else:
-                account_id, side = 1, "Bid"
+                if ask_turn:
+                    account_id, side = 0, "Ask"
+                else:
+                    account_id, side = 1, "Bid"
 
-            commands = []
-            for i in range(ORDERS_PER_SEND):
-                price = random.gauss(PRICE_MEAN, PRICE_STDDEV)
-                volume = random.randint(VOLUME_MIN, VOLUME_MAX)
-                commands.append(make_order_insert(account_id, side, price, volume))
+                commands = []
+                batch_order_ids = []
+                for _ in range(ORDERS_PER_SEND):
+                    price = random.gauss(PRICE_MEAN, PRICE_STDDEV)
+                    volume = random.randint(VOLUME_MIN, VOLUME_MAX)
+                    commands.append(make_order_insert(account_id, side, price, volume))
+                    batch_order_ids.append(next_order_id)
+                    next_order_id += 1
 
-            frame = encode_command_buffer(commands)
+                frame = encode_command_buffer(commands)
 
-            sock.sendall(frame)
-            # print(f"Sent {side:<3} orders account={account_id}")
+                sock.sendall(frame)
+                print(f"Sent {side:<3} orders account={account_id}  order_ids={batch_order_ids}")
+
+                open_orders.extend((oid, account_id) for oid in batch_order_ids)
+
+                ask_turn = not ask_turn
+                total_inserted += ORDERS_PER_SEND
 
             response_bytes = recv_frame(sock)
-            # print(f"  -> raw response ({len(response_bytes)} bytes): {response_bytes}")
+            print(f"  -> raw response ({len(response_bytes)} bytes): {response_bytes}")
 
-            ask_turn = not ask_turn
-            total_inserted += ORDERS_PER_SEND
-            # time.sleep(SEND_INTERVAL_SECONDS)
+            time.sleep(SEND_INTERVAL_SECONDS)
     except KeyboardInterrupt:
         elapsed = time.time() - start
-        print(f"\nRate: {total_inserted/elapsed} | Sent {total_inserted} orders in {elapsed}")
+        rate = total_inserted / elapsed if elapsed > 0 else 0.0
+        print(f"\nRate: {rate:.2f}/s | Sent {total_inserted} orders, "
+              f"{total_cancel_attempts} cancel attempts in {elapsed:.1f}s")
         print("Stopping.")
     except socket.timeout:
         print("\nSocket timed out (server not reading/responding) — exiting.")

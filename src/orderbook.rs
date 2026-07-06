@@ -86,8 +86,12 @@ impl Orderbook {
         };
 
         match book_side.get_mut(&price) {
-            None => { book_side.insert(price, VecDeque::from([order.into()])); },
-            Some(orders_at_price) => { orders_at_price.push_back(order.into()); },
+            None => {
+                book_side.insert(price, VecDeque::from([order.into()]));
+            }
+            Some(orders_at_price) => {
+                orders_at_price.push_back(order.into());
+            }
         };
     }
 
@@ -187,10 +191,12 @@ impl Orderbook {
         // Clean up orderbook
         for _ in 0..price_level_deletions {
             match side {
-                Side::Ask => { // prices = self.bids, so remove highest
+                Side::Ask => {
+                    // prices = self.bids, so remove highest
                     prices.pop_last();
                 }
-                Side::Bid => { // prices = self.bids, so remove highest
+                Side::Bid => {
+                    // prices = self.bids, so remove highest
                     prices.pop_first();
                 }
             }

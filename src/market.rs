@@ -33,7 +33,7 @@ pub struct OrderInsertionEffects {
     pub status: OrderExecutionStatus,
 }
 
-#[derive(Debug, Clone, Copy, Default, Serialize)]
+#[derive(Debug, Clone, Copy, Default,PartialEq, Serialize)]
 pub enum OrderExecutionStatus {
     #[default]
     AwaitingFill,
@@ -68,9 +68,11 @@ pub enum OrderCancellationError {
     /// The specified order does not exist.
     OrderDoesNotExist,
     /// User was not the one who created the order.
-    NotAuthorized,
+    UnAuthorized,
     /// The specified order was already filled
     AlreadyFilled,
+    /// The specified order was already cancelled
+    AlreadyCancelled,
     /// Market that the Order is registered for (no longer) exists. Should never happen in practice.
     MarketDoesNotExist,
     /// Order cannot be cancelled (because it is not a limit order)
