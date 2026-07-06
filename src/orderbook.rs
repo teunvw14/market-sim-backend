@@ -115,6 +115,32 @@ impl Orderbook {
         Err(OrderCancellationError::AlreadyFilled)
     }
 
+    pub fn modify_order(&mut self, modification: OrderModification) -> OrderModificationResult {
+        let side = match modification.side {
+            Side::Ask => &mut self.asks,
+            Side::Bid => &mut self.bids,
+        };
+        let price = modification.price;
+        if let Some(orders) = side.get_mut(&price) {
+            let mut index = None;
+            for (i, order) in orders.iter_mut().enumerate() {
+                if order.order_id == modification.order_id {
+                    if modification.volume_reduction >= order.remaining_volume {
+                        // Mark as filled
+                        index = Some(i);
+                    } else {
+                        order.remaining_volume -= modification.volume_reduction;
+                    };
+                }
+            }
+            if index.is_some() {
+                orders.remove(index.unwrap());
+                return Ok(());
+            }
+        }
+        Err(OrderModificationError::OrderNotFound)
+    }
+
     pub fn insert_order_limit(
         &mut self,
         mut order: OrderInsertion,

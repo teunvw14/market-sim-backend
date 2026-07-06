@@ -119,8 +119,9 @@ pub struct OrderCancellation {
 /// OrderModificationRequest is how a request to modify an order is received. Needs to be transformed into an OrderModification to be efficiently removed from an Orderbook.
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OrderModificationRequest {
-    pub pair: AssetIdPair,
     pub order_id: OrderId,
+    /// The account id is required for "authentication"
+    pub account_id: AccountId,
     pub new_volume: Volume,
 }
 
@@ -129,9 +130,16 @@ pub struct OrderModificationRequest {
 pub struct OrderModification {
     pub pair: AssetIdPair,
     pub order_id: OrderId,
-    pub new_volume: Volume,
+    pub volume_reduction: Volume,
     pub side: Side,
     pub price: Price,
+}
+
+impl OrderModificationRequest {
+    pub fn into_order_modification(self, pair: AssetIdPair, side: Side, price: Price, original_volume: Volume) -> OrderModification {
+        let volume_reduction = original_volume - self.new_volume;
+        OrderModification { pair, order_id: self.order_id, volume_reduction, side, price }
+    }
 }
 
 /// PlacedOrder struct contains all the data used to efficiently keep track of open orders.

@@ -38,10 +38,11 @@ PRICE_MEAN = 100.0
 PRICE_STDDEV = 10.0     # adjust to taste
 VOLUME_MIN = 5
 VOLUME_MAX = 500
-SEND_INTERVAL_SECONDS = 0.25
+SEND_INTERVAL_SECONDS = 1.0
 
 ORDERS_PER_SEND = 128
 CANCEL_PROBABILITY = 0.2  # chance, each iteration, of attempting a cancel instead of an insert
+MODIFY_PROBABILITY = 0.2  # chance, each iteration, of halving an existing order's volume
 
 FRAC_BITS = 31          # I33F31 -> 31 fractional bits
 PRICE_SCALE = 2 ** FRAC_BITS
@@ -73,6 +74,16 @@ def make_order_cancel(account_id: int, order_id: int) -> dict:
         "OrderCancel": [
             account_id,  # account_id: u32
             order_id,    # order_id: usize (plain int, not fixed-point, so unwrapped)
+        ]
+    }
+
+
+def make_order_modify(order_id: int, account_id: int, new_volume: int) -> dict:
+    return {
+        "OrderModify": [
+            order_id,    # order_id: usize
+            account_id,  # account_id: u32
+            new_volume,  # new_volume: Volume (u32)
         ]
     }
 
@@ -118,26 +129,42 @@ def main():
     start = time.time()
     total_inserted = 0
     total_cancel_attempts = 0
+    total_modify_attempts = 0
 
     next_order_id = 0          # client-side tracking of the next OrderId the server will assign
-    open_orders = []           # list of (order_id, account_id) for orders placed but not yet cancel-attempted
+    open_orders = []           # list of dicts: {order_id, account_id, volume} for orders still tracked
 
     ask_turn = True  # alternate: True -> account 0 / Ask, False -> account 1 / Bid
     try:
         while True:
-            attempt_cancel = open_orders and random.random() < CANCEL_PROBABILITY
+            roll = random.random()
+            do_cancel = open_orders and roll < CANCEL_PROBABILITY
+            do_modify = open_orders and CANCEL_PROBABILITY <= roll < CANCEL_PROBABILITY + MODIFY_PROBABILITY
 
-            if attempt_cancel:
+            if do_cancel:
                 idx = random.randrange(len(open_orders))
-                order_id, account_id = open_orders.pop(idx)
+                order = open_orders.pop(idx)
 
-                command = make_order_cancel(account_id, order_id)
+                command = make_order_cancel(order["account_id"], order["order_id"])
                 frame = encode_command_buffer([command])
 
                 sock.sendall(frame)
-                # print(f"Sent OrderCancel  account={account_id}  order_id={order_id}")
+                # print(f"Sent OrderCancel  account={order['account_id']}  order_id={order['order_id']}")
 
                 total_cancel_attempts += 1
+            elif do_modify:
+                order = random.choice(open_orders)
+                new_volume = order["volume"] // 2
+
+                command = make_order_modify(order["order_id"], order["account_id"], new_volume)
+                frame = encode_command_buffer([command])
+
+                sock.sendall(frame)
+                # print(f"Sent OrderModify  account={order['account_id']}  order_id={order['order_id']}  "
+                    #   f"volume {order['volume']} -> {new_volume}")
+
+                order["volume"] = new_volume
+                total_modify_attempts += 1
             else:
                 if ask_turn:
                     account_id, side = 0, "Ask"
@@ -146,11 +173,13 @@ def main():
 
                 commands = []
                 batch_order_ids = []
+                batch_volumes = []
                 for _ in range(ORDERS_PER_SEND):
                     price = random.gauss(PRICE_MEAN, PRICE_STDDEV)
                     volume = random.randint(VOLUME_MIN, VOLUME_MAX)
                     commands.append(make_order_insert(account_id, side, price, volume))
                     batch_order_ids.append(next_order_id)
+                    batch_volumes.append(volume)
                     next_order_id += 1
 
                 frame = encode_command_buffer(commands)
@@ -158,7 +187,10 @@ def main():
                 sock.sendall(frame)
                 # print(f"Sent {side:<3} orders account={account_id}  order_ids={batch_order_ids}")
 
-                open_orders.extend((oid, account_id) for oid in batch_order_ids)
+                open_orders.extend(
+                    {"order_id": oid, "account_id": account_id, "volume": volume}
+                    for oid, volume in zip(batch_order_ids, batch_volumes)
+                )
 
                 ask_turn = not ask_turn
                 total_inserted += ORDERS_PER_SEND
@@ -171,7 +203,8 @@ def main():
         elapsed = time.time() - start
         rate = total_inserted / elapsed if elapsed > 0 else 0.0
         print(f"\nRate: {rate:.2f}/s | Sent {total_inserted} orders, "
-              f"{total_cancel_attempts} cancel attempts in {elapsed:.1f}s")
+              f"{total_cancel_attempts} cancel attempts, {total_modify_attempts} modify attempts "
+              f"in {elapsed:.1f}s")
         print("Stopping.")
     except socket.timeout:
         print("\nSocket timed out (server not reading/responding) — exiting.")

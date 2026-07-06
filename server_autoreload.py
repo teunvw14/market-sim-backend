@@ -26,7 +26,6 @@ def main():
         for file in files:
             new_last_changed = os.path.getmtime(file)
             if new_last_changed > time_last_changes[file]:
-                print("aaaaaa")
                 time_last_changes[file] = new_last_changed
                 proc.terminate()
                 proc = subprocess.Popen(run_command)

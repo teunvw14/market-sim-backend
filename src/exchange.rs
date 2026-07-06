@@ -1,3 +1,5 @@
+use std::cmp::max;
+use std::cmp::min;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 
@@ -280,7 +282,7 @@ impl Exchange {
                 self.cancel_order(cancellation).into()
             }
             Command::OrderModify(modification) => {
-                todo!()
+                self.modify_order(modification).into()
             }
             Command::AddMarket(pair) => {
                 println!("Received new market {pair:?}");
@@ -334,6 +336,12 @@ impl Exchange {
             // Update order remaining volume
             maker_order.remaining_volume -= transaction.volume;
             taker_order.remaining_volume -= transaction.volume;
+            if maker_order.remaining_volume == 0 {
+                maker_order.status = OrderExecutionStatus::Filled;
+            }
+            if taker_order.remaining_volume == 0 {
+                maker_order.status = OrderExecutionStatus::Filled;
+            }
 
             // Update balances
             let maker_id = maker_order.account_id;
@@ -390,8 +398,11 @@ impl Exchange {
             .get_mut(&cancellation_req.order_id)
             .ok_or(OrderCancellationError::OrderDoesNotExist)?;
 
+        let order_id = order.id;
+        debug!("Order cancellation request: order {order_id}");
+
         if order.account_id != cancellation_req.account_id {
-            return Err(OrderCancellationError::UnAuthorized);
+            return Err(OrderCancellationError::Unauthorized);
         }
 
         if order.status == OrderExecutionStatus::Cancelled {
@@ -400,9 +411,7 @@ impl Exchange {
             return Err(OrderCancellationError::AlreadyFilled);
         }
 
-        debug!("Cancelling order {order:?}");
-
-        // Get market (if it exists - it really should)
+        // Get market (if it exists - it should)
         let market = self
             .markets
             .get_mut(&order.pair)
@@ -415,6 +424,54 @@ impl Exchange {
             order.status = OrderExecutionStatus::Cancelled;
         }
 
+        result
+    }
+
+    /// Modify an order (only volume decreased are allowed). If the new volume is lower than the 
+    /// amount that was already filled, the order is marked as Filled.
+    fn modify_order(&mut self, modification_req: OrderModificationRequest) -> OrderModificationResult {
+        // Look up order
+        let order = self
+            .session_orders
+            .get_mut(&modification_req.order_id)
+            .ok_or(OrderModificationError::OrderDoesNotExist)?;
+
+        let old_volume = order.volume;
+        let new_volume = modification_req.new_volume;
+        let order_id = modification_req.order_id;
+        debug!("Order modification request (order {order_id}): {old_volume} -> {new_volume}");
+
+        if order.account_id != modification_req.account_id {
+            return Err(OrderModificationError::Unauthorized);
+        }
+
+        if order.status == OrderExecutionStatus::Filled {
+            return Err(OrderModificationError::AlreadyFilled);
+        }
+
+        if modification_req.new_volume > order.volume {
+            return Err(OrderModificationError::VolumeNotLower);
+        }        
+
+        // Get market (if it exists - it should)
+        let market = self
+            .markets
+            .get_mut(&order.pair)
+            .ok_or(OrderModificationError::MarketDoesNotExist)?;
+        
+        // Apply modification
+        let modification = modification_req.into_order_modification(order.pair, order.side, order.price, order.volume);
+        let result = market.modify_order(modification);
+        
+        if result.is_ok() {
+            let volume_filled = order.volume - order.remaining_volume;
+            if volume_filled > modification_req.new_volume {
+                order.volume = volume_filled;
+                order.status = OrderExecutionStatus::Filled;
+            } else {
+                order.volume = modification_req.new_volume;
+            };
+        }
         result
     }
 }

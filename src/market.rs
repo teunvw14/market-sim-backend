@@ -69,7 +69,7 @@ pub enum OrderCancellationError {
     /// The specified order does not exist.
     OrderDoesNotExist,
     /// User was not the one who created the order.
-    UnAuthorized,
+    Unauthorized,
     /// The specified order was already filled
     AlreadyFilled,
     /// The specified order was already cancelled
@@ -83,9 +83,17 @@ pub enum OrderCancellationError {
 #[derive(Debug, Clone, Copy, Serialize)]
 pub enum OrderModificationError {
     /// The specified order does not exist.
+    OrderDoesNotExist,
+    /// The specified order does not exist.
     AlreadyFilled,
     /// User was not the one who created the order.
-    NotAuthorized,
+    Unauthorized,
+    /// Market that the Order is registered for (no longer) exists. Should never happen in practice.
+    MarketDoesNotExist,
+    /// Specified new volume is not lower than the original volume; needs to be lower.
+    VolumeNotLower,
+    /// Order could not be found in the Orderbook. Should never happen in practice.
+    OrderNotFound,
 }
 
 #[derive(Debug, Clone)]
@@ -131,8 +139,12 @@ impl Market {
 
     pub fn cancel_order(&mut self, cancellation: OrderCancellation) -> OrderCancellationResult {
         let orderbook = &mut self.orderbook;
-        let result = orderbook.cancel_order(cancellation);
-        result
+        orderbook.cancel_order(cancellation)
+    }
+
+    pub fn modify_order(&mut self, modification: OrderModification) -> OrderModificationResult {
+        let orderbook = &mut self.orderbook;
+        orderbook.modify_order(modification)
     }
 
     pub fn get_orderbook_size(&self) -> usize {
