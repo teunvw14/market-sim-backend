@@ -1,4 +1,4 @@
-# AI generated (Claude)! Not mine
+# AI generated (Claude). Not mine!
 
 """
 Sends OrderInsert commands to the exchange server every second, for pair (0, 1),
@@ -40,7 +40,7 @@ VOLUME_MIN = 5
 VOLUME_MAX = 500
 SEND_INTERVAL_SECONDS = 0.25
 
-ORDERS_PER_SEND = 1
+ORDERS_PER_SEND = 128
 CANCEL_PROBABILITY = 0.2  # chance, each iteration, of attempting a cancel instead of an insert
 
 FRAC_BITS = 31          # I33F31 -> 31 fractional bits
@@ -135,7 +135,7 @@ def main():
                 frame = encode_command_buffer([command])
 
                 sock.sendall(frame)
-                print(f"Sent OrderCancel  account={account_id}  order_id={order_id}")
+                # print(f"Sent OrderCancel  account={account_id}  order_id={order_id}")
 
                 total_cancel_attempts += 1
             else:
@@ -156,7 +156,7 @@ def main():
                 frame = encode_command_buffer(commands)
 
                 sock.sendall(frame)
-                print(f"Sent {side:<3} orders account={account_id}  order_ids={batch_order_ids}")
+                # print(f"Sent {side:<3} orders account={account_id}  order_ids={batch_order_ids}")
 
                 open_orders.extend((oid, account_id) for oid in batch_order_ids)
 
@@ -164,9 +164,9 @@ def main():
                 total_inserted += ORDERS_PER_SEND
 
             response_bytes = recv_frame(sock)
-            print(f"  -> raw response ({len(response_bytes)} bytes): {response_bytes}")
+            # print(f"  -> raw response ({len(response_bytes)} bytes): {response_bytes}")
 
-            time.sleep(SEND_INTERVAL_SECONDS)
+            # time.sleep(SEND_INTERVAL_SECONDS)
     except KeyboardInterrupt:
         elapsed = time.time() - start
         rate = total_inserted / elapsed if elapsed > 0 else 0.0

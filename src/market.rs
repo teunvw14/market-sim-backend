@@ -4,6 +4,7 @@ use serde::Serialize;
 use thiserror::Error;
 
 use crate::asset::*;
+use crate::exchange::CommandResult;
 use crate::order::*;
 use crate::orderbook::*;
 use crate::types::*;

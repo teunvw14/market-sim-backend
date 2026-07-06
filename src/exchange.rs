@@ -33,6 +33,38 @@ pub enum CommandResult {
     GetBalance(Option<Balance>),
 }
 
+// Impl conversions for the different CommandResult variants so that we can call
+// `.into` on the Result type to get a CommandResult
+impl From<OrderInsertionResult> for CommandResult {
+    fn from(value: OrderInsertionResult) -> Self {
+        CommandResult::OrderInsert(value)
+    }
+}
+
+impl From<OrderCancellationResult> for CommandResult {
+    fn from(value: OrderCancellationResult) -> Self {
+        CommandResult::OrderCancel(value)
+    }
+}
+
+impl From<OrderModificationResult> for CommandResult {
+    fn from(value: OrderModificationResult) -> Self {
+        CommandResult::OrderModify(value)
+    }
+}
+
+impl From<MarketCreationResult> for CommandResult {
+    fn from(value: MarketCreationResult) -> Self {
+        CommandResult::AddMarket(value)
+    }
+}
+
+impl From<Option<Balance>> for CommandResult {
+    fn from(value: Option<Balance>) -> Self {
+        CommandResult::GetBalance(value)
+    }
+}
+
 /// A buffer of commands for a specific market
 pub type CommandBuffer = VecDeque<Command>;
 
@@ -240,24 +272,22 @@ impl Exchange {
     }
 
     fn handle_command(&mut self, command: Command, response_buf: &mut CommandResultBuffer) {
-        let result = match command {
+        let result: CommandResult = match command {
             Command::OrderInsert(insertion_req) => {
-                let result = self.insert_order(insertion_req);
-                CommandResult::OrderInsert(result)
+                self.insert_order(insertion_req).into()
             }
             Command::OrderCancel(cancellation) => {
-                let result = self.cancel_order(cancellation);
-                CommandResult::OrderCancel(result)
+                self.cancel_order(cancellation).into()
             }
             Command::OrderModify(modification) => {
                 todo!()
             }
             Command::AddMarket(pair) => {
                 println!("Received new market {pair:?}");
-                CommandResult::AddMarket(self.add_market(pair))
+                self.add_market(pair).into()
             }
             Command::GetBalance(account_id, asset_id) => {
-                CommandResult::GetBalance(self.balance_book.get(account_id, asset_id))
+                self.balance_book.get(account_id, asset_id).into()
             }
         };
         response_buf.push_back(result);

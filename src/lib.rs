@@ -3,7 +3,7 @@ pub mod balance_book;
 pub mod exchange;
 pub mod exchange_configs;
 pub mod market;
-pub mod mp_command_encoding;
+pub mod mp_command_codec;
 pub mod order;
 pub mod orderbook;
 pub mod statics;

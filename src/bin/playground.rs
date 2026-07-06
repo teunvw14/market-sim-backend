@@ -5,7 +5,7 @@
 #![allow(unused_imports)]
 
 use backend::{
-    asset::*, exchange::*, exchange_configs, mp_command_encoding::MpCommandCodec, order::*,
+    asset::*, exchange::*, exchange_configs, mp_command_codec::MpCommandCodec, order::*,
     statics::*, types::*,
 };
 use bytes::{Bytes, BytesMut};
