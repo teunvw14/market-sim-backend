@@ -1,20 +1,23 @@
 use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
+use serde_repr::*;
 
 use crate::{asset::*, market::*, types::*};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize_repr)]
+#[repr(u8)]
 pub enum OrderType {
-    Limit,
-    FillOrKill,
-    Market,
+    Limit = 0,
+    FillOrKill = 1,
+    Market = 2,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize_repr)]
+#[repr(u8)]
 pub enum Side {
-    Bid,
-    Ask,
+    Bid = 0,
+    Ask = 1,
 }
 
 /// A request to insert a particular order, without an identifying ID or status.
@@ -79,7 +82,7 @@ impl Display for OrderInsertion {
         let price = self.price;
         write!(
             f,
-            "Order {id} in Market {pair:?} from account {acc_id}: {side:?} {volume} at {price} ({ot:?}) "
+            "Order {id} in Market {pair:?} from account {acc_id}: {side:?} {price} ({volume} {ot:?}) "
         )
     }
 }

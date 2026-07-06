@@ -1,4 +1,4 @@
-use backend::{exchange_configs::*, order::*, types::*};
+use backend::{exchange::{Command, CommandResult}, exchange_configs::*, order::*, types::*};
 
 #[tokio::test]
 async fn buy_sell() {
@@ -57,4 +57,37 @@ async fn buy_sell() {
         bal_secondary_2,
         -Price::lit("0.85") * 5 + -Price::lit("0.86") * 5
     );
+}
+
+#[tokio::test]
+async fn modify_order() {
+    let (exchange_handle, pair, acc_id_1, acc_id_2) = exchange_eur_usd_market_2_accs().await;
+
+    let price: Price = Price::lit("0.85");
+    let client = exchange_handle.get_client();
+    let insertion_effects = client
+        .insert_order(OrderInsertionRequest {
+            account_id: acc_id_1,
+            order_type: OrderType::Limit,
+            pair,
+            side: Side::Ask,
+            volume: 5,
+            price,
+        })
+        .await
+        .unwrap();
+    
+    let order_id = insertion_effects.id;
+    
+    let order_modification_req = Command::OrderModify(OrderModificationRequest {
+        account_id: acc_id_1,
+        order_id,
+        new_volume: 3,
+    });
+    let command_result = client.send_commands([order_modification_req].into()).await
+        .pop_back()
+        .unwrap();
+    if let CommandResult::OrderModify(res) = command_result {
+        assert_eq!(res, Ok(()));
+    }
 }

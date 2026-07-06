@@ -40,7 +40,7 @@ VOLUME_MIN = 5
 VOLUME_MAX = 500
 SEND_INTERVAL_SECONDS = 1.0
 
-ORDERS_PER_SEND = 128
+ORDERS_PER_SEND = 1
 CANCEL_PROBABILITY = 0.2  # chance, each iteration, of attempting a cancel instead of an insert
 MODIFY_PROBABILITY = 0.2  # chance, each iteration, of halving an existing order's volume
 
@@ -55,14 +55,14 @@ def encode_price(value: float) -> list:
     return [bits]
 
 
-def make_order_insert(account_id: int, side: str, price: float, volume: int) -> dict:
+def make_order_insert(account_id: int, side: int, price: float, volume: int) -> dict:
     primary, secondary = PAIR
     return {
         "OrderInsert": [
             account_id,           # account_id: u32
-            "Limit",              # order_type: OrderType::Limit
+            0,                    # order_type: OrderType::Limit (=1)
             [primary, secondary], # pair: AssetIdPair { primary, secondary }
-            side,                 # side: "Ask" | "Bid"
+            side,                 # side: "Ask" (1) | "Bid" (0)
             volume,                # volume: u32
             encode_price(price),  # price: I33F31 -> [bits]
         ]
@@ -149,7 +149,7 @@ def main():
                 frame = encode_command_buffer([command])
 
                 sock.sendall(frame)
-                # print(f"Sent OrderCancel  account={order['account_id']}  order_id={order['order_id']}")
+                print(f"Sent OrderCancel  account={order['account_id']}  order_id={order['order_id']}")
 
                 total_cancel_attempts += 1
             elif do_modify:
@@ -160,16 +160,16 @@ def main():
                 frame = encode_command_buffer([command])
 
                 sock.sendall(frame)
-                # print(f"Sent OrderModify  account={order['account_id']}  order_id={order['order_id']}  "
-                    #   f"volume {order['volume']} -> {new_volume}")
+                print(f"Sent OrderModify  account={order['account_id']}  order_id={order['order_id']}  "
+                      f"volume {order['volume']} -> {new_volume}")
 
                 order["volume"] = new_volume
                 total_modify_attempts += 1
             else:
                 if ask_turn:
-                    account_id, side = 0, "Ask"
+                    account_id, side = 0, 1
                 else:
-                    account_id, side = 1, "Bid"
+                    account_id, side = 1, 0
 
                 commands = []
                 batch_order_ids = []
@@ -185,7 +185,7 @@ def main():
                 frame = encode_command_buffer(commands)
 
                 sock.sendall(frame)
-                # print(f"Sent {side:<3} orders account={account_id}  order_ids={batch_order_ids}")
+                print(f"Sent {side:<3} orders account={account_id}  order_ids={batch_order_ids}")
 
                 open_orders.extend(
                     {"order_id": oid, "account_id": account_id, "volume": volume}
@@ -196,9 +196,9 @@ def main():
                 total_inserted += ORDERS_PER_SEND
 
             response_bytes = recv_frame(sock)
-            # print(f"  -> raw response ({len(response_bytes)} bytes): {response_bytes}")
+            print(f"  -> raw response ({len(response_bytes)} bytes): {response_bytes}")
 
-            # time.sleep(SEND_INTERVAL_SECONDS)
+            time.sleep(SEND_INTERVAL_SECONDS)
     except KeyboardInterrupt:
         elapsed = time.time() - start
         rate = total_inserted / elapsed if elapsed > 0 else 0.0

@@ -6,6 +6,7 @@ use std::collections::VecDeque;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
 use tracing::debug;
+use tracing::trace;
 
 use crate::{
     asset::*,
@@ -446,9 +447,10 @@ impl Exchange {
         }
 
         if order.status == OrderExecutionStatus::Filled {
+            trace!("Order already filled");
             return Err(OrderModificationError::AlreadyFilled);
         }
-
+        
         if modification_req.new_volume > order.volume {
             return Err(OrderModificationError::VolumeNotLower);
         }        

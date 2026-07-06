@@ -80,7 +80,7 @@ pub enum OrderCancellationError {
     NotCancellable,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, PartialEq)]
 pub enum OrderModificationError {
     /// The specified order does not exist.
     OrderDoesNotExist,
