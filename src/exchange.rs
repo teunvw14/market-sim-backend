@@ -1,5 +1,3 @@
-use std::cmp::max;
-use std::cmp::min;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 
@@ -8,9 +6,10 @@ use tokio::sync::{mpsc, oneshot};
 use tracing::debug;
 use tracing::trace;
 
+use crate::exchange_client::ExchangeClient;
 use crate::{
-    asset::*, balance_book::BalanceBook, market::*, order::*, orderbook::*, statics::MPSC_CAPACITY,
-    types::*,
+    asset::*, balance_book::BalanceBook, market::*, order::*, orderbook::*,
+    util::statics::MPSC_CAPACITY, util::types::*,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -20,6 +19,8 @@ pub enum Command {
     OrderModify(OrderModificationRequest),
     AddMarket(AssetIdPair),
     GetBalance(AccountId, AssetId),
+    GetMarketL1(AssetIdPair),
+    GetMarketL2(AssetIdPair),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -29,6 +30,8 @@ pub enum CommandResult {
     OrderModify(OrderModificationResult),
     AddMarket(MarketCreationResult),
     GetBalance(Option<Balance>),
+    GetMarketL1(),
+    GetMarketL2(),
 }
 
 // Impl conversions for the different CommandResult variants so that we can call
@@ -72,53 +75,6 @@ pub type CommandResultBuffer = VecDeque<CommandResult>;
 pub struct CommandBufferWithReplyChannel {
     pub command_buf: CommandBuffer,
     pub tx_reply: oneshot::Sender<CommandResultBuffer>,
-}
-
-/// Wrapper around Markets for sending orders to an exchange
-pub struct ExchangeClient {
-    tx_command_buf: mpsc::Sender<CommandBufferWithReplyChannel>,
-}
-
-impl ExchangeClient {
-    /// Helper function to send a single order insertion
-    pub async fn insert_order(
-        &self,
-        order_insertion_req: OrderInsertionRequest,
-    ) -> OrderInsertionResult {
-        let command = Command::OrderInsert(order_insertion_req);
-        let buf: CommandBuffer = vec![command].into();
-        let mut result_buf = self.send_commands(buf).await;
-        if let Some(result) = result_buf.pop_front() {
-            match result {
-                CommandResult::OrderInsert(res) => res,
-                _ => Err(OrderInsertionError::Other),
-            }
-        } else {
-            Err(OrderInsertionError::Other)
-        }
-    }
-
-    pub async fn get_balance(&self, account_id: AccountId, asset_id: AssetId) -> Option<Balance> {
-        let command = Command::GetBalance(account_id, asset_id);
-        let buf: CommandBuffer = vec![command].into();
-        let mut result_buf = self.send_commands(buf).await;
-        if let Some(result) = result_buf.pop_front()
-            && let CommandResult::GetBalance(balance) = result
-        {
-            return balance;
-        }
-        None
-    }
-
-    pub async fn send_commands(&self, command_buf: CommandBuffer) -> CommandResultBuffer {
-        let (tx_reply, rx_reply) = oneshot::channel();
-        let command_buf = CommandBufferWithReplyChannel {
-            command_buf: command_buf,
-            tx_reply,
-        };
-        self.tx_command_buf.send(command_buf).await.unwrap();
-        rx_reply.await.unwrap() // TODO: fix all these unwraps
-    }
 }
 
 pub struct Transaction {
@@ -286,6 +242,8 @@ impl Exchange {
     }
 
     fn insert_order(&mut self, insertion_req: OrderInsertionRequest) -> OrderInsertionResult {
+        debug!("Insertion request: {insertion_req:?}");
+
         // Get market (if it exists)
         let market = self
             .markets
@@ -300,7 +258,6 @@ impl Exchange {
         // Insert OpenOrder
         let open_order = PlacedOrder::from_insertion(&insertion);
         self.session_orders.insert(new_id, open_order);
-        debug!("Inserted order {insertion}");
 
         // Process transactions resulting from order insertion
         self.process_transactions(insertion_req.pair);
@@ -382,14 +339,13 @@ impl Exchange {
         &mut self,
         cancellation_req: OrderCancellationRequest,
     ) -> OrderCancellationResult {
+        debug!("Cancellation request: order {}", cancellation_req.order_id);
+
         // Look up order
         let order = self
             .session_orders
             .get_mut(&cancellation_req.order_id)
             .ok_or(OrderCancellationError::OrderDoesNotExist)?;
-
-        let order_id = order.id;
-        debug!("Order cancellation request: order {order_id}");
 
         if order.account_id != cancellation_req.account_id {
             return Err(OrderCancellationError::Unauthorized);
@@ -423,23 +379,20 @@ impl Exchange {
         &mut self,
         modification_req: OrderModificationRequest,
     ) -> OrderModificationResult {
+        debug!("Modification request: order {} new_volume={}", modification_req.order_id, modification_req.new_volume);
+
         // Look up order
         let order = self
             .session_orders
             .get_mut(&modification_req.order_id)
             .ok_or(OrderModificationError::OrderDoesNotExist)?;
 
-        let old_volume = order.volume;
-        let new_volume = modification_req.new_volume;
-        let order_id = modification_req.order_id;
-        debug!("Order modification request (order {order_id}): {old_volume} -> {new_volume}");
 
         if order.account_id != modification_req.account_id {
             return Err(OrderModificationError::Unauthorized);
         }
 
         if order.status == OrderExecutionStatus::Filled {
-            trace!("Order already filled");
             return Err(OrderModificationError::AlreadyFilled);
         }
 

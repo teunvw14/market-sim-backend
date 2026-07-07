@@ -1,4 +1,4 @@
-use backend::{asset::AssetIdPair, exchange::*, exchange_configs::*, order::*, types::*};
+use backend::{asset::AssetIdPair, exchange::*, order::*, util::types::*};
 
 #[test]
 fn command_get_balance() {

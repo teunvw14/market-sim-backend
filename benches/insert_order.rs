@@ -1,13 +1,13 @@
 use std::time::Duration;
 
-use backend::statics::ORDER_PRICES;
+use backend::util::statics::ORDER_PRICES;
 use criterion::async_executor::FuturesExecutor;
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 
 use backend::asset::*;
 use backend::exchange::*;
 use backend::order::*;
-use backend::types::*;
+use backend::util::types::*;
 
 async fn actually_insert_order() {}
 

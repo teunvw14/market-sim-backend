@@ -8,9 +8,12 @@ use num_format::{CustomFormat, ToFormattedString};
 use backend::{
     asset::*,
     exchange::*,
+    exchange_client::ExchangeClient,
     order::*,
-    statics::{MAX_CMD_BUF_SIZE, ORDER_PRICES, VOLUMES},
-    types::*,
+    util::{
+        statics::{MAX_CMD_BUF_SIZE, ORDER_PRICES, VOLUMES},
+        types::*,
+    },
 };
 
 const BUF_SIZE: usize = MAX_CMD_BUF_SIZE;

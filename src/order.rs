@@ -3,7 +3,7 @@ use std::fmt::Display;
 use serde::{Deserialize, Serialize};
 use serde_repr::*;
 
-use crate::{asset::*, market::*, types::*};
+use crate::{asset::*, market::*, util::types::*};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]

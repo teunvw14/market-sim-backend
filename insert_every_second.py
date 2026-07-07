@@ -47,6 +47,16 @@ MODIFY_PROBABILITY = 0.2  # chance, each iteration, of halving an existing order
 FRAC_BITS = 31          # I33F31 -> 31 fractional bits
 PRICE_SCALE = 2 ** FRAC_BITS
 
+ORDER_TYPES = {
+    0: "Limit",
+    1: "FillOrKill",
+    2: "Market"
+}
+
+SIDES = {
+    0: "Bid",
+    1: "Ask"
+}
 
 def encode_price(value: float) -> list:
     """Encode a float as the raw fixed-point bits (I33F31), matching the
@@ -55,12 +65,12 @@ def encode_price(value: float) -> list:
     return [bits]
 
 
-def make_order_insert(account_id: int, side: int, price: float, volume: int) -> dict:
+def make_order_insert(account_id: int, order_type: int, side: int, price: float, volume: int) -> dict:
     primary, secondary = PAIR
     return {
         "OrderInsert": [
             account_id,           # account_id: u32
-            0,                    # order_type: OrderType::Limit (=1)
+            order_type,           # order_type
             [primary, secondary], # pair: AssetIdPair { primary, secondary }
             side,                 # side: "Ask" (1) | "Bid" (0)
             volume,                # volume: u32
@@ -174,10 +184,11 @@ def main():
                 commands = []
                 batch_order_ids = []
                 batch_volumes = []
+                order_type = random.choice(list(ORDER_TYPES.keys())) # 0 = Limit, 1 = FillOrKill, 2 = Market
                 for _ in range(ORDERS_PER_SEND):
                     price = random.gauss(PRICE_MEAN, PRICE_STDDEV)
                     volume = random.randint(VOLUME_MIN, VOLUME_MAX)
-                    commands.append(make_order_insert(account_id, side, price, volume))
+                    commands.append(make_order_insert(account_id, order_type, side, price, volume))
                     batch_order_ids.append(next_order_id)
                     batch_volumes.append(volume)
                     next_order_id += 1
@@ -185,7 +196,7 @@ def main():
                 frame = encode_command_buffer(commands)
 
                 sock.sendall(frame)
-                print(f"Sent {side:<3} orders account={account_id}  order_ids={batch_order_ids}")
+                print(f"Sent {SIDES[side]} orders account={account_id}  order_ids={batch_order_ids} {ORDER_TYPES[order_type]}")
 
                 open_orders.extend(
                     {"order_id": oid, "account_id": account_id, "volume": volume}

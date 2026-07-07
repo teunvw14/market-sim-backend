@@ -1,5 +1,5 @@
 /// Contains a few setups for Exchange objects
-use crate::{asset::*, exchange::*, order::*, types::*};
+use crate::{asset::*, exchange::*, util::types::*};
 
 /// Create a simple exchange with a single EUR/USD market and two accounts.
 pub async fn exchange_eur_usd_market() -> (ExchangeHandle, AssetIdPair) {

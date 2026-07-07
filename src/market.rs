@@ -5,10 +5,9 @@ use serde_repr::Serialize_repr;
 use thiserror::Error;
 
 use crate::asset::*;
-use crate::exchange::CommandResult;
 use crate::order::*;
 use crate::orderbook::*;
-use crate::types::*;
+use crate::util::types::*;
 
 // Errors
 
@@ -123,17 +122,7 @@ impl Market {
         transaction_buf: &mut ObTransactionBuffer,
     ) -> ObOrderInsertionResult {
         let orderbook = &mut self.orderbook;
-        let execution_result = match order.order_type {
-            OrderType::Limit => orderbook.insert_order_limit(order, transaction_buf),
-            OrderType::FillOrKill => {
-                unimplemented!();
-                // orderbook.insert_order_fill_or_kill(&self.asset_pair, order, order_change_buf)
-            }
-            OrderType::Market => {
-                unimplemented!();
-                // orderbook.insert_order_market(&self.asset_pair, order, order_change_buf)
-            }
-        };
+        let execution_result = orderbook.insert_order(order, transaction_buf);
         if let Ok(execution_result) = &execution_result {
             if let Some(last_traded_price) = execution_result.last_traded_price {
                 self.last_traded_price = last_traded_price

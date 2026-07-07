@@ -1,8 +1,8 @@
 use backend::{
     exchange::{Command, CommandResult},
-    exchange_configs::*,
     order::*,
-    types::*,
+    util::exchange_configs::*,
+    util::types::*,
 };
 
 /// Place two asks at different price levels, one bid that should consume both.

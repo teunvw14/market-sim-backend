@@ -3,7 +3,8 @@ use std::collections::{BTreeMap, VecDeque};
 
 use tracing::debug;
 
-use crate::{market::*, order::*, types::*};
+use crate::order::OrderType;
+use crate::{market::*, order::*, util::types::*};
 
 #[derive(Debug, Clone)]
 pub struct OrderbookEntry {
@@ -140,36 +141,51 @@ impl Orderbook {
         result
     }
 
-    pub fn insert_order_limit(
+    pub fn insert_order(
         &mut self,
         mut order: OrderInsertion,
         transaction_buf: &mut ObTransactionBuffer,
     ) -> ObOrderInsertionResult {
+        // Check volume requirements for FillOrKill and Market orders
+        if order.order_type == OrderType::FillOrKill {
+            self.enough_volume_fok(order.side, order.volume, order.price)?;
+        } else if order.order_type == OrderType::Market {
+            self.enough_volume_market(order.side, order.volume)?;
+        }
+
         let mut remaining = order.volume;
         let mut last_traded_price = None;
 
-        let side = order.side;
-        let price = order.price;
-
-        let prices = match side {
-            Side::Ask => &mut self.bids,
-            Side::Bid => &mut self.asks,
+        // Define the side of `prices` for readability: the side of the prices
+        // we want to iterate over is the opposite of the order side.
+        let prices_side = match order.side {
+            Side::Ask => Side::Bid, // if the order is an ask, iterate over bids
+            Side::Bid => Side::Ask, // if the order is a bid, iterate over asks
+        };
+        let prices = match prices_side {
+            Side::Bid => &mut self.bids,
+            Side::Ask => &mut self.asks,
         };
 
         let mut iterator = prices.iter_mut();
-        let iterator = std::iter::from_fn(move || match side {
-            Side::Ask => iterator.next_back(), // prices = self.bids, so get highest
-            Side::Bid => iterator.next(),      // prices = self.asks, so get lowest
+        let iterator = std::iter::from_fn(move || match prices_side {
+            Side::Ask => iterator.next(),      // get lowest ask
+            Side::Bid => iterator.next_back(), // get highest bid
         });
 
         // Keep track of how many price levels are consumed (and thus need to be deleted)
         let mut price_level_deletions = 0;
 
+        let is_bid = order.side == Side::Bid;
+        let is_ask = order.side == Side::Ask;
+        let is_market_order = order.order_type == OrderType::Market;
         for (open_order_price, open_orders) in iterator {
-            let bid_price_too_high = side == Side::Bid && *open_order_price > price;
-            let ask_price_too_low = side == Side::Ask && *open_order_price < price;
-            if bid_price_too_high || ask_price_too_low {
-                break;
+            if !(is_market_order) {
+                let bid_price_too_high = is_bid && *open_order_price > order.price;
+                let ask_price_too_low = is_ask && *open_order_price < order.price;
+                if bid_price_too_high || ask_price_too_low {
+                        break;
+                }
             }
 
             while let Some(open_order) = open_orders.iter_mut().next() {
@@ -179,7 +195,7 @@ impl Orderbook {
 
                 // Check for self-transaction
                 if order.account_id == open_order.account_id {
-                    debug!("Self trade!!!!!");
+                    debug!("🚨 Self trade 🚨");
                     return Err(OrderInsertionError::SelfTrade);
                 }
 
@@ -187,7 +203,7 @@ impl Orderbook {
                 transaction_buf.push(ObTransaction {
                     price: *open_order_price,
                     volume: transaction_volume,
-                    taker_side: side,
+                    taker_side: order.side,
                     order_id_maker: open_order.order_id,
                     order_id_taker: order.id,
                 });
@@ -214,14 +230,12 @@ impl Orderbook {
 
         // Clean up orderbook
         for _ in 0..price_level_deletions {
-            match side {
+            match prices_side {
                 Side::Ask => {
-                    // prices = self.bids, so remove highest
-                    prices.pop_last();
+                    prices.pop_first(); // remove lowest ask
                 }
                 Side::Bid => {
-                    // prices = self.bids, so remove highest
-                    prices.pop_first();
+                    prices.pop_last(); // remove highest bid
                 }
             }
         }
@@ -240,94 +254,46 @@ impl Orderbook {
         })
     }
 
-    // pub fn insert_order_fill_or_kill(
-    //     &mut self,
-    //     asset_pair: &AssetIdPair,
-    //     order: Order,
-    // ) -> OrderInsertionResult {
-    //     unimplemented!();
-    // }
+    /// Check if there's enough volume to fill a Fill-or-Kill order on `side` with `volume`. Returns Ok(()) if
+    /// enough volume exists, otherwise returns Err(OrderInsertionError::OrderKilled).
+    fn enough_volume_fok(&self, order_side: Side, volume: Volume, price: Price) -> Result<(), OrderInsertionError> {
+        let mut available_volume = 0;
+        let side_offers = match order_side {
+            Side::Ask => &self.bids,
+            Side::Bid => &self.asks,
+        };
+        for (open_orders_price, open_orders) in side_offers.iter() {
+            let bid_price_too_high = order_side == Side::Bid && *open_orders_price > price;
+            let ask_price_too_low = order_side == Side::Ask && *open_orders_price < price;
+            if bid_price_too_high || ask_price_too_low {
+                break;
+            }
+            for open_order in open_orders {
+                available_volume += open_order.remaining_volume;
+                if available_volume >= volume {
+                    return Ok(());
+                }
+            }
+        }
+        Err(OrderInsertionError::OrderKilled)
+    }
 
-    // pub fn insert_order_market(
-    //     &mut self,
-    //     asset_pair: &AssetIdPair,
-    //     order: Order,
-    // ) -> OrderInsertionResult {
-    //     unimplemented!();
-    // let side_offers = match order.side {
-    //     Side::Ask => &mut self.bids,
-    //     Side::Bid => &mut self.asks,
-    // };
-
-    // // Check if order can be filled
-    // let mut available_volume = 0;
-    // for (_price, open_orders) in side_offers.iter() {
-    //     for open_order in open_orders {
-    //         available_volume += open_order.remaining_volume;
-    //         if available_volume > order.volume {
-    //             break;
-    //         }
-    //     }
-    //     if available_volume > order.volume {
-    //         break;
-    //     }
-    // }
-    // if available_volume < order.volume {
-    //     return Err(OrderInsertionError::InadequateVolume);
-    // }
-
-    // let (taker_increasing_asset_id, taker_decreasing_asset_id) = match order.side {
-    //     Side::Ask => (asset_pair.secondary, asset_pair.primary),
-    //     Side::Bid => (asset_pair.primary, asset_pair.secondary),
-    // };
-
-    // // Fill order
-    // let mut remaining = order.volume;
-    // let mut balance_transfers = Vec::new();
-    // for (price, open_orders) in side_offers {
-    //     while let Some(mut open_order) = open_orders.pop_front() {
-    //         let diff = min(remaining, open_order.remaining_volume);
-    //         open_order.remaining_volume -= diff;
-    //         remaining -= diff;
-
-    //         let primary_change = Balance::from(diff);
-    //         let secondary_change = price * (diff as i128);
-    //         let (change_decr, change_incr) = match order.side {
-    //             Side::Bid => (secondary_change, primary_change),
-    //             Side::Ask => (primary_change, secondary_change),
-    //         };
-    //         // First asset swap
-    //         balance_transfers.push(BalanceTransfer {
-    //             from_id: order.account_id,
-    //             to_id: open_order.original_order.account_id,
-    //             asset_id: taker_decreasing_asset_id,
-    //             change: change_decr,
-    //         });
-
-    //         // Second asset swap
-    //         balance_transfers.push(BalanceTransfer {
-    //             from_id: open_order.original_order.account_id,
-    //             to_id: order.account_id,
-    //             asset_id: taker_increasing_asset_id,
-    //             change: change_incr,
-    //         });
-
-    //         if open_order.remaining_volume > 0 {
-    //             open_orders.push_front(open_order);
-    //         }
-
-    //         if remaining <= 0 {
-    //             break;
-    //         }
-    //     }
-    //     if remaining <= 0 {
-    //         break;
-    //     }
-    // }
-
-    // Ok(OrderExecutionEffects {
-    //     status: OrderExecutionStatus::Filled,
-    //     balance_transfers,
-    // })
-    // }
+    /// Check if there's enough volume to fill a market order on `side` with `volume`. Returns Ok(()) if
+    /// enough volume exists, otherwise returns Err(OrderInsertionError::InadequateVolume).
+    fn enough_volume_market(&self, order_side: Side, volume: Volume) -> Result<(), OrderInsertionError> {
+        let mut available_volume = 0;
+        let side_offers = match order_side {
+            Side::Ask => &self.bids,
+            Side::Bid => &self.asks,
+        };
+        for (_price, open_orders) in side_offers.iter() {
+            for open_order in open_orders {
+                available_volume += open_order.remaining_volume;
+                if available_volume >= volume {
+                    return Ok(());
+                }
+            }
+        }
+        Err(OrderInsertionError::InadequateVolume)
+    }
 }

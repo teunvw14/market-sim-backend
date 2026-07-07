@@ -1,6 +1,6 @@
-use std::slice::{GetDisjointMutError, SliceIndex};
+use std::slice::GetDisjointMutError;
 
-use crate::types::*;
+use crate::util::types::*;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct BalanceBook {

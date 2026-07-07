@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::types::*;
+use crate::util::types::*;
 
 #[derive(PartialEq, Eq, Debug, Clone, Default, Hash)]
 pub struct Asset {

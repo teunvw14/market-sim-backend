@@ -1,10 +1,8 @@
 pub mod asset;
 pub mod balance_book;
 pub mod exchange;
-pub mod exchange_configs;
+pub mod exchange_client;
 pub mod market;
-pub mod mp_command_codec;
 pub mod order;
 pub mod orderbook;
-pub mod statics;
-pub mod types;
+pub mod util;
