@@ -39,16 +39,18 @@ pub enum CommandResult {
 }
 
 macro_rules! define_commands {
-    ( $($CommandName:ident, $ResultType:ty, $($CommandArgs:ty)*;)+) => {
+    ( $($CommandName:ident, $ResultType:ty, $($CommandArgs:ty,)*;)+) => {
         #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
         pub enum CommandByMacro {
-            $($CommandName($($CommandArgs,)*))+
+            $($CommandName($($CommandArgs,)*),)+
         }
     };
 }
 
 define_commands!{
     OrderInsert, OrderInsertionResult, OrderInsertionRequest;
+    OrderCancel, OrderCancellationResult, OrderCancellationRequest;
+    GetBalance, Option<Balance>, AccountId, AssetId;
 }
 
 // Impl conversions for the different CommandResult variants so that we can call

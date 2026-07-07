@@ -8,7 +8,7 @@ use tracing::{Level, debug, info};
 use tracing_subscriber::FmtSubscriber;
 
 use backend::{
-    asset::AssetIdPair, exchange::*, exchange_client::ExchangeClient, util::{exchange_configs, mp_command_codec::MpCommandCodec, statics::*},
+    asset::AssetIdPair, exchange::*, exchange_client::ExchangeClient, util::{exchange_configs, format_exact_width::{pad_left, pad_right}, mp_command_codec::MpCommandCodec, statics::*},
 };
 
 // Connections < 100 makes this reasonable.
@@ -64,7 +64,12 @@ fn get_tracing_subscriber() -> FmtSubscriber {
 
 async fn monitor_market(client: ExchangeClient, pair: AssetIdPair) {
     let get_l1_command = Command::GetOrderbookL1(pair);
-    let mut interval = tokio::time::interval(Duration::from_secs(1));
+    let mut interval = tokio::time::interval(Duration::from_millis(100));
+    let mut last_message = String::new();
+
+    let price_width = 6;
+    let vol_width = 4;
+    let full_width = price_width + vol_width + 1;
     loop {
         let result = client.send_commands([get_l1_command].into()).await
             .pop_back()
@@ -72,14 +77,18 @@ async fn monitor_market(client: ExchangeClient, pair: AssetIdPair) {
         if let CommandResult::GetOrderbookL1(result_l1) = result {
             if let Ok(l1) = result_l1 {
                 let bid_text = match l1.best_bid {
-                    None => String::from("-"),
-                    Some(price_aggr) => format!("({:.3}) {:.3}", price_aggr.volume, price_aggr.price),
+                    None => pad_right(String::from(" -"), full_width),
+                    Some(price_aggr) => format!("{} {}", pad_right(price_aggr.volume, vol_width), pad_left(format!("{:.3}", price_aggr.price), price_width)),
                 };
                 let ask_text = match l1.best_ask {
-                    None => String::from("-"),
-                    Some(price_aggr) => format!("{:.3} ({:.3})", price_aggr.price, price_aggr.volume),
+                    None => pad_left(String::from("- "), full_width),
+                    Some(price_aggr) => format!("{} {}", pad_right(format!("{:.3}", price_aggr.price), price_width), pad_left(price_aggr.volume, vol_width)),
                 };
-                info!("EUR/USD: Bid {} / {} Ask", bid_text, ask_text);
+                let new_message= format!("EUR/USD: [Bid {} | {} Ask]", bid_text, ask_text);
+                if new_message != last_message {
+                    last_message = new_message;
+                    info!("{last_message}");
+                }
             }
         }
         interval.tick().await;

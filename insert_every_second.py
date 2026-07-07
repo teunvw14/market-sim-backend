@@ -37,7 +37,7 @@ PAIR = (0, 1)          # (primary, secondary) asset ids
 PRICE_MEAN = 0.85
 PRICE_STDDEV = 0.01     # adjust to taste
 VOLUME_MEAN = 50
-SEND_INTERVAL_SECONDS = 0.01
+SEND_INTERVAL_SECONDS = 1
 
 ORDERS_PER_SEND = 1
 CANCEL_PROBABILITY = 0.05  # chance, each iteration, of attempting a cancel instead of an insert
