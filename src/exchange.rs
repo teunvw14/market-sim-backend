@@ -21,6 +21,8 @@ pub enum Command {
     GetBalance(AccountId, AssetId),
     GetOrderbookL1(AssetIdPair),
     GetOrderbookL2(AssetIdPair),
+    GetAssets(),
+    GetAllOrderbookL1(),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -32,51 +34,47 @@ pub enum CommandResult {
     GetBalance(Option<Balance>),
     GetOrderbookL1(GetOrderBookL1Result),
     GetOrderbookL2(GetOrderBookL2Result),
+    GetAssets(Vec<Asset>),
+    GetAllOrderbookL1(Vec<(AssetIdPair, OrderbookL1)>),
+}
+
+macro_rules! define_commands {
+    ( $($CommandName:ident, $ResultType:ty, $($CommandArgs:ty)*;)+) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+        pub enum CommandByMacro {
+            $($CommandName($($CommandArgs,)*))+
+        }
+    };
+}
+
+define_commands!{
+    OrderInsert, OrderInsertionResult, OrderInsertionRequest;
 }
 
 // Impl conversions for the different CommandResult variants so that we can call
 // `.into` on the Result type to get a CommandResult
-impl From<OrderInsertionResult> for CommandResult {
-    fn from(value: OrderInsertionResult) -> Self {
-        CommandResult::OrderInsert(value)
-    }
+macro_rules! from_result_to_command_result {
+    ( $($ResultType:ty, $CommandResultVariant:ident;)+) => {
+        $(
+            impl From<$ResultType> for CommandResult {
+                fn from(value: $ResultType) -> Self {
+                    CommandResult::$CommandResultVariant(value)
+                }
+            }
+        )+
+    };
 }
 
-impl From<OrderCancellationResult> for CommandResult {
-    fn from(value: OrderCancellationResult) -> Self {
-        CommandResult::OrderCancel(value)
-    }
-}
+from_result_to_command_result!(
+    OrderInsertionResult, OrderInsert;
+    OrderCancellationResult, OrderCancel;
+    OrderModificationResult, OrderModify;
+    MarketCreationResult, AddMarket;
+    Option<Balance>, GetBalance;
+    GetOrderBookL1Result, GetOrderbookL1;
+    GetOrderBookL2Result, GetOrderbookL2;
+);
 
-impl From<OrderModificationResult> for CommandResult {
-    fn from(value: OrderModificationResult) -> Self {
-        CommandResult::OrderModify(value)
-    }
-}
-
-impl From<MarketCreationResult> for CommandResult {
-    fn from(value: MarketCreationResult) -> Self {
-        CommandResult::AddMarket(value)
-    }
-}
-
-impl From<Option<Balance>> for CommandResult {
-    fn from(value: Option<Balance>) -> Self {
-        CommandResult::GetBalance(value)
-    }
-}
-
-impl From<GetOrderBookL1Result> for CommandResult {
-    fn from(value: GetOrderBookL1Result) -> Self {
-        CommandResult::GetOrderbookL1(value)
-    }
-}
-
-impl From<GetOrderBookL2Result> for CommandResult {
-    fn from(value: GetOrderBookL2Result) -> Self {
-        CommandResult::GetOrderbookL2(value)
-    }
-}
 
 /// A buffer of commands for a specific market
 pub type CommandBuffer = VecDeque<Command>;
@@ -244,6 +242,8 @@ impl Exchange {
             }
             Command::GetOrderbookL1(pair) => self.get_orderbook_l1(pair).into(),
             Command::GetOrderbookL2(pair) => self.get_orderbook_l2(pair).into(),
+            Command::GetAssets() => unimplemented!(),
+            Command::GetAllOrderbookL1() => unimplemented!(),
         };
         response_buf.push_back(result);
     }

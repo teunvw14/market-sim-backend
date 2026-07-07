@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::util::types::*;
 
-#[derive(PartialEq, Eq, Debug, Clone, Default, Hash)]
+#[derive(PartialEq, Eq, Debug, Clone, Default, Hash, Serialize, Deserialize)]
 pub struct Asset {
     pub id: AssetId,
     pub name: String,
