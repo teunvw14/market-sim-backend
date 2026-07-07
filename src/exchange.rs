@@ -9,12 +9,7 @@ use tracing::debug;
 use tracing::trace;
 
 use crate::{
-    asset::*,
-    balance_book::BalanceBook,
-    market::*,
-    order::*,
-    orderbook::*,
-    statics::MPSC_CAPACITY,
+    asset::*, balance_book::BalanceBook, market::*, order::*, orderbook::*, statics::MPSC_CAPACITY,
     types::*,
 };
 
@@ -27,7 +22,7 @@ pub enum Command {
     GetBalance(AccountId, AssetId),
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum CommandResult {
     OrderInsert(OrderInsertionResult),
     OrderCancel(OrderCancellationResult),
@@ -276,15 +271,9 @@ impl Exchange {
 
     fn handle_command(&mut self, command: Command, response_buf: &mut CommandResultBuffer) {
         let result: CommandResult = match command {
-            Command::OrderInsert(insertion_req) => {
-                self.insert_order(insertion_req).into()
-            }
-            Command::OrderCancel(cancellation) => {
-                self.cancel_order(cancellation).into()
-            }
-            Command::OrderModify(modification) => {
-                self.modify_order(modification).into()
-            }
+            Command::OrderInsert(insertion_req) => self.insert_order(insertion_req).into(),
+            Command::OrderCancel(cancellation) => self.cancel_order(cancellation).into(),
+            Command::OrderModify(modification) => self.modify_order(modification).into(),
             Command::AddMarket(pair) => {
                 println!("Received new market {pair:?}");
                 self.add_market(pair).into()
@@ -428,9 +417,12 @@ impl Exchange {
         result
     }
 
-    /// Modify an order (only volume decreased are allowed). If the new volume is lower than the 
+    /// Modify an order (only volume decreased are allowed). If the new volume is lower than the
     /// amount that was already filled, the order is marked as Filled.
-    fn modify_order(&mut self, modification_req: OrderModificationRequest) -> OrderModificationResult {
+    fn modify_order(
+        &mut self,
+        modification_req: OrderModificationRequest,
+    ) -> OrderModificationResult {
         // Look up order
         let order = self
             .session_orders
@@ -450,21 +442,26 @@ impl Exchange {
             trace!("Order already filled");
             return Err(OrderModificationError::AlreadyFilled);
         }
-        
+
         if modification_req.new_volume > order.volume {
             return Err(OrderModificationError::VolumeNotLower);
-        }        
+        }
 
         // Get market (if it exists - it should)
         let market = self
             .markets
             .get_mut(&order.pair)
             .ok_or(OrderModificationError::MarketDoesNotExist)?;
-        
+
         // Apply modification
-        let modification = modification_req.into_order_modification(order.pair, order.side, order.price, order.volume);
+        let modification = modification_req.into_order_modification(
+            order.pair,
+            order.side,
+            order.price,
+            order.volume,
+        );
         let result = market.modify_order(modification);
-        
+
         if result.is_ok() {
             let volume_filled = order.volume - order.remaining_volume;
             if volume_filled > modification_req.new_volume {

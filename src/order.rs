@@ -5,7 +5,7 @@ use serde_repr::*;
 
 use crate::{asset::*, market::*, types::*};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize_repr)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
 pub enum OrderType {
     Limit = 0,
@@ -13,7 +13,7 @@ pub enum OrderType {
     Market = 2,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize_repr)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
 pub enum Side {
     Bid = 0,
@@ -139,9 +139,21 @@ pub struct OrderModification {
 }
 
 impl OrderModificationRequest {
-    pub fn into_order_modification(self, pair: AssetIdPair, side: Side, price: Price, original_volume: Volume) -> OrderModification {
+    pub fn into_order_modification(
+        self,
+        pair: AssetIdPair,
+        side: Side,
+        price: Price,
+        original_volume: Volume,
+    ) -> OrderModification {
         let volume_reduction = original_volume - self.new_volume;
-        OrderModification { pair, order_id: self.order_id, volume_reduction, side, price }
+        OrderModification {
+            pair,
+            order_id: self.order_id,
+            volume_reduction,
+            side,
+            price,
+        }
     }
 }
 

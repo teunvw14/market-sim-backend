@@ -1,6 +1,7 @@
 use std::fmt::Display;
 
 use serde::Serialize;
+use serde_repr::Serialize_repr;
 use thiserror::Error;
 
 use crate::asset::*;
@@ -11,7 +12,7 @@ use crate::types::*;
 
 // Errors
 
-#[derive(Error, Debug, Clone, Copy, Serialize)]
+#[derive(Error, Debug, Clone, Copy, PartialEq, Serialize)]
 pub enum MarketCreationError {
     #[error("Market for pair {asset_pair:?} already exists.")]
     MarketAlreadyExists { asset_pair: AssetIdPair },
@@ -27,14 +28,15 @@ pub type MarketCreationResult = Result<(), MarketCreationError>;
 
 // Order (related) types
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct OrderInsertionEffects {
     // The id assigned to the order
     pub id: usize,
     pub status: OrderExecutionStatus,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize_repr)]
+#[repr(u8)]
 pub enum OrderExecutionStatus {
     #[default]
     AwaitingFill,
@@ -48,7 +50,8 @@ pub type OrderInsertionResult = Result<OrderInsertionEffects, OrderInsertionErro
 pub type OrderCancellationResult = Result<(), OrderCancellationError>;
 pub type OrderModificationResult = Result<(), OrderModificationError>;
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize_repr)]
+#[repr(u8)]
 pub enum OrderInsertionError {
     /// The specified market does not exist.
     MarketDoesNotExist,
@@ -64,7 +67,8 @@ pub enum OrderInsertionError {
     Other,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize_repr)]
+#[repr(u8)]
 pub enum OrderCancellationError {
     /// The specified order does not exist.
     OrderDoesNotExist,
@@ -80,7 +84,8 @@ pub enum OrderCancellationError {
     NotCancellable,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize_repr)]
+#[repr(u8)]
 pub enum OrderModificationError {
     /// The specified order does not exist.
     OrderDoesNotExist,

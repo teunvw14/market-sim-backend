@@ -3,11 +3,7 @@ use std::collections::{BTreeMap, VecDeque};
 
 use tracing::debug;
 
-use crate::{
-    market::*,
-    order::*,
-    types::*,
-};
+use crate::{market::*, order::*, types::*};
 
 #[derive(Debug, Clone)]
 pub struct OrderbookEntry {
@@ -121,24 +117,27 @@ impl Orderbook {
             Side::Bid => &mut self.bids,
         };
         let price = modification.price;
+
+        // Do a linear search over orders at the given price
+        let mut result = Err(OrderModificationError::OrderNotFound);
         if let Some(orders) = side.get_mut(&price) {
-            let mut index = None;
+            let mut remove_index = None;
             for (i, order) in orders.iter_mut().enumerate() {
                 if order.order_id == modification.order_id {
                     if modification.volume_reduction >= order.remaining_volume {
-                        // Mark as filled
-                        index = Some(i);
+                        // Volume reduction leads to an immediate fill - remove from orderbook
+                        remove_index = Some(i);
                     } else {
                         order.remaining_volume -= modification.volume_reduction;
                     };
+                    result = Ok(())
                 }
             }
-            if index.is_some() {
-                orders.remove(index.unwrap());
-                return Ok(());
+            if let Some(idx) = remove_index {
+                orders.remove(idx);
             }
         }
-        Err(OrderModificationError::OrderNotFound)
+        result
     }
 
     pub fn insert_order_limit(
