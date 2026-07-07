@@ -2,26 +2,12 @@ use std::fmt::Display;
 
 use serde::Serialize;
 use serde_repr::Serialize_repr;
-use thiserror::Error;
 
 use crate::asset::*;
+use crate::errors::*;
 use crate::order::*;
 use crate::orderbook::*;
 use crate::util::types::*;
-
-// Errors
-
-#[derive(Error, Debug, Clone, Copy, PartialEq, Serialize)]
-pub enum MarketCreationError {
-    #[error("Market for pair {asset_pair:?} already exists.")]
-    MarketAlreadyExists { asset_pair: AssetIdPair },
-    #[error("Asset {asset:?} is not traded on this exchange.")]
-    AssetNotTraded { asset: AssetId },
-    #[error("There are no market handlers to assign the market to.")]
-    NoMarketHandlers,
-    #[error("Unknown error occurred creating a market.")]
-    Other,
-}
 
 pub type MarketCreationResult = Result<(), MarketCreationError>;
 
@@ -49,62 +35,12 @@ pub type OrderInsertionResult = Result<OrderInsertionEffects, OrderInsertionErro
 pub type OrderCancellationResult = Result<(), OrderCancellationError>;
 pub type OrderModificationResult = Result<(), OrderModificationError>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize_repr)]
-#[repr(u8)]
-pub enum OrderInsertionError {
-    /// The specified market does not exist.
-    MarketDoesNotExist,
-    /// The parameters on the order are illegal. Illegal parameters should be caught by the calling frontend if possible.
-    IllegalParameters,
-    /// The order was killed (only for Fill-or-Kill orders).
-    OrderKilled,
-    /// There was not enough volume to fill the order (only for market or Fill-or-Kill orders).
-    InadequateVolume,
-    /// The insertion would result in a self-trade
-    SelfTrade,
-    /// Other (should never occur)
-    Other,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize_repr)]
-#[repr(u8)]
-pub enum OrderCancellationError {
-    /// The specified order does not exist.
-    OrderDoesNotExist,
-    /// User was not the one who created the order.
-    Unauthorized,
-    /// The specified order was already filled
-    AlreadyFilled,
-    /// The specified order was already cancelled
-    AlreadyCancelled,
-    /// Market that the Order is registered for (no longer) exists. Should never happen in practice.
-    MarketDoesNotExist,
-    /// Order cannot be cancelled (because it is not a limit order)
-    NotCancellable,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize_repr)]
-#[repr(u8)]
-pub enum OrderModificationError {
-    /// The specified order does not exist.
-    OrderDoesNotExist,
-    /// The specified order does not exist.
-    AlreadyFilled,
-    /// User was not the one who created the order.
-    Unauthorized,
-    /// Market that the Order is registered for (no longer) exists. Should never happen in practice.
-    MarketDoesNotExist,
-    /// Specified new volume is not lower than the original volume; needs to be lower.
-    VolumeNotLower,
-    /// Order could not be found in the Orderbook. Should never happen in practice.
-    OrderNotFound,
-}
 
 #[derive(Debug, Clone)]
 pub struct Market {
     pub asset_pair: AssetIdPair,
     pub last_traded_price: Price,
-    pub orderbook: Orderbook,
+    pub orderbook: Orderbook
 }
 
 impl Market {
@@ -150,6 +86,14 @@ impl Market {
             result += v.len();
         }
         result
+    }
+
+    pub fn get_l1(&self) -> OrderbookL1 {
+        self.orderbook.get_l1()
+    }
+
+    pub fn get_l2(&self) -> OrderbookL2 {
+        self.orderbook.get_l2()
     }
 }
 
@@ -210,7 +154,7 @@ impl Markets {
     pub fn add_market(&mut self, asset_pair: AssetIdPair) -> MarketCreationResult {
         // Only one market allowed per asset pair
         if self.contains(&asset_pair) {
-            return Err(MarketCreationError::MarketAlreadyExists { asset_pair });
+            return Err(MarketCreationError::MarketAlreadyExists);
         };
 
         // Create market and push to storing vec

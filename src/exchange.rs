@@ -4,8 +4,8 @@ use std::collections::VecDeque;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
 use tracing::debug;
-use tracing::trace;
 
+use crate::errors::*;
 use crate::exchange_client::ExchangeClient;
 use crate::{
     asset::*, balance_book::BalanceBook, market::*, order::*, orderbook::*,
@@ -19,8 +19,8 @@ pub enum Command {
     OrderModify(OrderModificationRequest),
     AddMarket(AssetIdPair),
     GetBalance(AccountId, AssetId),
-    GetMarketL1(AssetIdPair),
-    GetMarketL2(AssetIdPair),
+    GetOrderbookL1(AssetIdPair),
+    GetOrderbookL2(AssetIdPair),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -30,8 +30,8 @@ pub enum CommandResult {
     OrderModify(OrderModificationResult),
     AddMarket(MarketCreationResult),
     GetBalance(Option<Balance>),
-    GetMarketL1(),
-    GetMarketL2(),
+    GetOrderbookL1(GetOrderBookL1Result),
+    GetOrderbookL2(GetOrderBookL2Result),
 }
 
 // Impl conversions for the different CommandResult variants so that we can call
@@ -63,6 +63,18 @@ impl From<MarketCreationResult> for CommandResult {
 impl From<Option<Balance>> for CommandResult {
     fn from(value: Option<Balance>) -> Self {
         CommandResult::GetBalance(value)
+    }
+}
+
+impl From<GetOrderBookL1Result> for CommandResult {
+    fn from(value: GetOrderBookL1Result) -> Self {
+        CommandResult::GetOrderbookL1(value)
+    }
+}
+
+impl From<GetOrderBookL2Result> for CommandResult {
+    fn from(value: GetOrderBookL2Result) -> Self {
+        CommandResult::GetOrderbookL2(value)
     }
 }
 
@@ -183,16 +195,9 @@ impl Exchange {
 
     pub fn add_market(&mut self, asset_pair: AssetIdPair) -> MarketCreationResult {
         // Market can only be created for listed assets
-        if !self.traded_assets.contains_key(&asset_pair.primary) {
-            return Err(MarketCreationError::AssetNotTraded {
-                asset: asset_pair.primary,
-            });
+        if !(self.traded_assets.contains_key(&asset_pair.primary) && self.traded_assets.contains_key(&asset_pair.secondary)) {
+            return Err(MarketCreationError::AssetNotTraded);
         }
-        if !self.traded_assets.contains_key(&asset_pair.secondary) {
-            return Err(MarketCreationError::AssetNotTraded {
-                asset: asset_pair.secondary,
-            });
-        };
         self.markets.add_market(asset_pair)
     }
 
@@ -237,6 +242,8 @@ impl Exchange {
             Command::GetBalance(account_id, asset_id) => {
                 self.balance_book.get(account_id, asset_id).into()
             }
+            Command::GetOrderbookL1(pair) => self.get_orderbook_l1(pair).into(),
+            Command::GetOrderbookL2(pair) => self.get_orderbook_l2(pair).into(),
         };
         response_buf.push_back(result);
     }
@@ -379,14 +386,16 @@ impl Exchange {
         &mut self,
         modification_req: OrderModificationRequest,
     ) -> OrderModificationResult {
-        debug!("Modification request: order {} new_volume={}", modification_req.order_id, modification_req.new_volume);
+        debug!(
+            "Modification request: order {} new_volume={}",
+            modification_req.order_id, modification_req.new_volume
+        );
 
         // Look up order
         let order = self
             .session_orders
             .get_mut(&modification_req.order_id)
             .ok_or(OrderModificationError::OrderDoesNotExist)?;
-
 
         if order.account_id != modification_req.account_id {
             return Err(OrderModificationError::Unauthorized);
@@ -425,5 +434,21 @@ impl Exchange {
             };
         }
         result
+    }
+
+    fn get_orderbook_l1(&self, pair: AssetIdPair) -> GetOrderBookL1Result {
+        let market = self
+            .markets
+            .get(&pair)
+            .ok_or(GetOrderbookError::MarketDoesNotExist)?;
+        Ok(market.get_l1())
+    }
+    
+    fn get_orderbook_l2(&self, pair: AssetIdPair) -> GetOrderBookL2Result {
+        let market = self
+            .markets
+            .get(&pair)
+            .ok_or(GetOrderbookError::MarketDoesNotExist)?;
+        Ok(market.get_l2())
     }
 }

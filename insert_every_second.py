@@ -34,15 +34,17 @@ HOST = "127.0.0.1"
 PORT = 5555
 
 PAIR = (0, 1)          # (primary, secondary) asset ids
-PRICE_MEAN = 100.0
-PRICE_STDDEV = 10.0     # adjust to taste
-VOLUME_MIN = 5
-VOLUME_MAX = 500
-SEND_INTERVAL_SECONDS = 1.0
+PRICE_MEAN = 0.85
+PRICE_STDDEV = 0.01     # adjust to taste
+VOLUME_MEAN = 50
+SEND_INTERVAL_SECONDS = 0.01
 
 ORDERS_PER_SEND = 1
-CANCEL_PROBABILITY = 0.2  # chance, each iteration, of attempting a cancel instead of an insert
-MODIFY_PROBABILITY = 0.2  # chance, each iteration, of halving an existing order's volume
+CANCEL_PROBABILITY = 0.05  # chance, each iteration, of attempting a cancel instead of an insert
+MODIFY_PROBABILITY = 0.05  # chance, each iteration, of halving an existing order's volume
+
+MARKET_ORDER_PROBABILITY = 0.05
+FOK_ORDER_PROBABILITY = 0.05
 
 FRAC_BITS = 31          # I33F31 -> 31 fractional bits
 PRICE_SCALE = 2 ** FRAC_BITS
@@ -151,6 +153,15 @@ def main():
             do_cancel = open_orders and roll < CANCEL_PROBABILITY
             do_modify = open_orders and CANCEL_PROBABILITY <= roll < CANCEL_PROBABILITY + MODIFY_PROBABILITY
 
+
+            # determine order type (0 = Limit, 1 = FillOrKill, 2 = Market)
+            order_type = 0
+            if roll < FOK_ORDER_PROBABILITY:
+                order_type = 1
+            elif roll < FOK_ORDER_PROBABILITY + MARKET_ORDER_PROBABILITY:
+                order_type = 2
+                
+
             if do_cancel:
                 idx = random.randrange(len(open_orders))
                 order = open_orders.pop(idx)
@@ -184,10 +195,10 @@ def main():
                 commands = []
                 batch_order_ids = []
                 batch_volumes = []
-                order_type = random.choice(list(ORDER_TYPES.keys())) # 0 = Limit, 1 = FillOrKill, 2 = Market
+
                 for _ in range(ORDERS_PER_SEND):
-                    price = random.gauss(PRICE_MEAN, PRICE_STDDEV)
-                    volume = random.randint(VOLUME_MIN, VOLUME_MAX)
+                    price = max(0.001, random.gauss(PRICE_MEAN, PRICE_STDDEV))
+                    volume = max(1, int(random.expovariate(1/VOLUME_MEAN)))
                     commands.append(make_order_insert(account_id, order_type, side, price, volume))
                     batch_order_ids.append(next_order_id)
                     batch_volumes.append(volume)
@@ -196,7 +207,7 @@ def main():
                 frame = encode_command_buffer(commands)
 
                 sock.sendall(frame)
-                print(f"Sent {SIDES[side]} orders account={account_id}  order_ids={batch_order_ids} {ORDER_TYPES[order_type]}")
+                print(f"Sent {SIDES[side]} orders account={account_id}  order_ids={batch_order_ids} volume={batch_volumes} {ORDER_TYPES[order_type]}")
 
                 open_orders.extend(
                     {"order_id": oid, "account_id": account_id, "volume": volume}

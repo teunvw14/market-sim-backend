@@ -1,15 +1,14 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, time::Duration};
 
 use futures_util::sink::SinkExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
-use tracing::{Level, info};
+use tracing::{Level, debug, info};
 use tracing_subscriber::FmtSubscriber;
 
 use backend::{
-    exchange::*, exchange_client::ExchangeClient, util::exchange_configs,
-    util::mp_command_codec::MpCommandCodec, util::statics::*,
+    asset::AssetIdPair, exchange::*, exchange_client::ExchangeClient, util::{exchange_configs, mp_command_codec::MpCommandCodec, statics::*},
 };
 
 // Connections < 100 makes this reasonable.
@@ -63,6 +62,30 @@ fn get_tracing_subscriber() -> FmtSubscriber {
         .finish()
 }
 
+async fn monitor_market(client: ExchangeClient, pair: AssetIdPair) {
+    let get_l1_command = Command::GetOrderbookL1(pair);
+    let mut interval = tokio::time::interval(Duration::from_secs(1));
+    loop {
+        let result = client.send_commands([get_l1_command].into()).await
+            .pop_back()
+            .unwrap();
+        if let CommandResult::GetOrderbookL1(result_l1) = result {
+            if let Ok(l1) = result_l1 {
+                let bid_text = match l1.best_bid {
+                    None => String::from("-"),
+                    Some(price_aggr) => format!("({:.3}) {:.3}", price_aggr.volume, price_aggr.price),
+                };
+                let ask_text = match l1.best_ask {
+                    None => String::from("-"),
+                    Some(price_aggr) => format!("{:.3} ({:.3})", price_aggr.price, price_aggr.volume),
+                };
+                info!("EUR/USD: Bid {} / {} Ask", bid_text, ask_text);
+            }
+        }
+        interval.tick().await;
+    }
+}
+
 #[tokio::main]
 async fn main() {
     // Set up `tracing`
@@ -71,10 +94,14 @@ async fn main() {
         .expect("Tracing subscriber should be set successfully.");
 
     // Initialize Exchange and TcpListener
-    let (exchange_handle, _pair, _id1, _id2) =
+    let (exchange_handle, pair, _id1, _id2) =
         exchange_configs::exchange_eur_usd_market_2_accs().await;
     let bind_addr = "127.0.0.1:5555";
     let listener = TcpListener::bind(bind_addr).await.unwrap();
+
+    // Start monitor for market
+    let monitor_client = exchange_handle.get_client();
+    tokio::task::spawn(monitor_market(monitor_client, pair));
 
     // Clear terminal screen and reset cursor to (1, 1), then print start message
     print!("\x1B[2J\x1b[1;1H");

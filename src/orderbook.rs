@@ -1,8 +1,10 @@
 use std::cmp::min;
 use std::collections::{BTreeMap, VecDeque};
 
+use serde::{Deserialize, Serialize};
 use tracing::debug;
 
+use crate::errors::*;
 use crate::order::OrderType;
 use crate::{market::*, order::*, util::types::*};
 
@@ -57,7 +59,33 @@ pub struct ObTransaction {
 /// A buffer of transactions resulting from an order insertion
 pub type ObTransactionBuffer = Vec<ObTransaction>;
 
+/// The aggregate (sum of sizes) of a particular price level. Used in L1 and L2
+/// Orderbook views.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct PriceLevelAggregate {
+    pub price: Price,
+    pub volume: Volume,
+}
+
+/// An L1 view of an Orderbook (best bid/ask + aggregate size)
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct OrderbookL1 {
+    pub best_bid: Option<PriceLevelAggregate>,
+    pub best_ask: Option<PriceLevelAggregate>,
+}
+
+/// An L2 view of an Orderbook (aggregate size for each price level)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OrderbookL2 {
+    pub asks: Vec<PriceLevelAggregate>,
+    pub bids: Vec<PriceLevelAggregate>,
+}
+
+pub type GetOrderBookL1Result = Result<OrderbookL1, GetOrderbookError>;
+pub type GetOrderBookL2Result = Result<OrderbookL2, GetOrderbookError>;
+
 #[derive(Debug, Clone, Default)]
+/// The core Orderbook struct that keeps track of all open orders.
 pub struct Orderbook {
     pub bids: BTreeMap<Price, VecDeque<OrderbookEntry>>,
     pub asks: BTreeMap<Price, VecDeque<OrderbookEntry>>,
@@ -184,7 +212,7 @@ impl Orderbook {
                 let bid_price_too_high = is_bid && *open_order_price > order.price;
                 let ask_price_too_low = is_ask && *open_order_price < order.price;
                 if bid_price_too_high || ask_price_too_low {
-                        break;
+                    break;
                 }
             }
 
@@ -256,7 +284,12 @@ impl Orderbook {
 
     /// Check if there's enough volume to fill a Fill-or-Kill order on `side` with `volume`. Returns Ok(()) if
     /// enough volume exists, otherwise returns Err(OrderInsertionError::OrderKilled).
-    fn enough_volume_fok(&self, order_side: Side, volume: Volume, price: Price) -> Result<(), OrderInsertionError> {
+    fn enough_volume_fok(
+        &self,
+        order_side: Side,
+        volume: Volume,
+        price: Price,
+    ) -> Result<(), OrderInsertionError> {
         let mut available_volume = 0;
         let side_offers = match order_side {
             Side::Ask => &self.bids,
@@ -280,7 +313,11 @@ impl Orderbook {
 
     /// Check if there's enough volume to fill a market order on `side` with `volume`. Returns Ok(()) if
     /// enough volume exists, otherwise returns Err(OrderInsertionError::InadequateVolume).
-    fn enough_volume_market(&self, order_side: Side, volume: Volume) -> Result<(), OrderInsertionError> {
+    fn enough_volume_market(
+        &self,
+        order_side: Side,
+        volume: Volume,
+    ) -> Result<(), OrderInsertionError> {
         let mut available_volume = 0;
         let side_offers = match order_side {
             Side::Ask => &self.bids,
@@ -295,5 +332,59 @@ impl Orderbook {
             }
         }
         Err(OrderInsertionError::InadequateVolume)
+    }
+
+    pub fn get_l1(&self) -> OrderbookL1 {
+        // Get best_bid
+        let last_key_value_opt = self.bids.last_key_value();
+        let best_bid = match last_key_value_opt {
+            None => None,
+            Some((price, prices)) => {
+                let volume = prices.iter().map(|o| o.remaining_volume).sum();
+                Some(PriceLevelAggregate {
+                    price: price.clone(),
+                    volume,
+                })
+            }
+        };
+
+        // Get best_ask
+        let first_key_value_opt = self.asks.first_key_value();
+        let best_ask = match first_key_value_opt {
+            None => None,
+            Some((price, prices)) => {
+                let volume = prices.iter().map(|o| o.remaining_volume).sum();
+                Some(PriceLevelAggregate {
+                    price: price.clone(),
+                    volume,
+                })
+            }
+        };
+
+        OrderbookL1 { best_bid, best_ask }
+    }
+    
+    pub fn get_l2(&self) -> OrderbookL2 {
+        // Get bids
+        let mut bids = Vec::with_capacity(self.bids.len());
+        for (bid_price, bid_orders) in &self.bids {
+            let volume = bid_orders.iter().map(|o| o.remaining_volume).sum();
+            bids.push(PriceLevelAggregate {
+                price: bid_price.clone(),
+                volume,
+            })
+        }
+
+        // Get asks
+        let mut asks = Vec::with_capacity(self.asks.len());
+        for (ask_price, ask_orders) in &self.asks {
+            let volume = ask_orders.iter().map(|o| o.remaining_volume).sum();
+            asks.push(PriceLevelAggregate {
+                price: ask_price.clone(),
+                volume,
+            })
+        }
+
+        OrderbookL2 { bids, asks }
     }
 }

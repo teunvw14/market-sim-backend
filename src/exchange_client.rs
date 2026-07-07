@@ -1,5 +1,7 @@
 use tokio::sync::{mpsc, oneshot};
 
+use crate::errors::*;
+
 use crate::{
     exchange::{
         Command, CommandBuffer, CommandBufferWithReplyChannel, CommandResult, CommandResultBuffer,
