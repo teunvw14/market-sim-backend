@@ -363,7 +363,7 @@ impl Orderbook {
 
         OrderbookL1 { best_bid, best_ask }
     }
-    
+
     pub fn get_l2(&self) -> OrderbookL2 {
         // Get bids
         let mut bids = Vec::with_capacity(self.bids.len());

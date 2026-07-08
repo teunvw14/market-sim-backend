@@ -4,11 +4,19 @@ use futures_util::sink::SinkExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
-use tracing::{Level, debug, info};
+use tracing::{Level, info};
 use tracing_subscriber::FmtSubscriber;
 
 use backend::{
-    asset::AssetIdPair, exchange::*, exchange_client::ExchangeClient, util::{exchange_configs, format_exact_width::{pad_left, pad_right}, mp_command_codec::MpCommandCodec, statics::*},
+    asset::AssetIdPair,
+    exchange::*,
+    exchange_client::ExchangeClient,
+    util::{
+        exchange_configs,
+        format_exact_width::{pad_left, pad_right},
+        mp_command_codec::MpCommandCodec,
+        statics::*,
+    },
 };
 
 // Connections < 100 makes this reasonable.
@@ -71,20 +79,30 @@ async fn monitor_market(client: ExchangeClient, pair: AssetIdPair) {
     let vol_width = 4;
     let full_width = price_width + vol_width + 1;
     loop {
-        let result = client.send_commands([get_l1_command].into()).await
+        let result = client
+            .send_commands([get_l1_command].into())
+            .await
             .pop_back()
             .unwrap();
         if let CommandResult::GetOrderbookL1(result_l1) = result {
             if let Ok(l1) = result_l1 {
                 let bid_text = match l1.best_bid {
                     None => pad_right(String::from(" -"), full_width),
-                    Some(price_aggr) => format!("{} {}", pad_right(price_aggr.volume, vol_width), pad_left(format!("{:.3}", price_aggr.price), price_width)),
+                    Some(price_aggr) => format!(
+                        "{} {}",
+                        pad_right(price_aggr.volume, vol_width),
+                        pad_left(format!("{:.3}", price_aggr.price), price_width)
+                    ),
                 };
                 let ask_text = match l1.best_ask {
                     None => pad_left(String::from("- "), full_width),
-                    Some(price_aggr) => format!("{} {}", pad_right(format!("{:.3}", price_aggr.price), price_width), pad_left(price_aggr.volume, vol_width)),
+                    Some(price_aggr) => format!(
+                        "{} {}",
+                        pad_right(format!("{:.3}", price_aggr.price), price_width),
+                        pad_left(price_aggr.volume, vol_width)
+                    ),
                 };
-                let new_message= format!("EUR/USD: [Bid {} | {} Ask]", bid_text, ask_text);
+                let new_message = format!("EUR/USD: [Bid {} | {} Ask]", bid_text, ask_text);
                 if new_message != last_message {
                     last_message = new_message;
                     info!("{last_message}");

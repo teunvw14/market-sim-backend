@@ -1,9 +1,9 @@
 pub mod asset;
 pub mod balance_book;
+pub mod errors;
 pub mod exchange;
 pub mod exchange_client;
 pub mod market;
 pub mod order;
 pub mod orderbook;
 pub mod util;
-pub mod errors;

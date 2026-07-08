@@ -1,11 +1,5 @@
-use serde::Serialize;
 use serde_repr::Serialize_repr;
 use thiserror::Error;
-
-use crate::{
-    asset::*,
-    util::types::*,
-};
 
 #[derive(Error, Debug, Clone, Copy, PartialEq, Serialize_repr)]
 #[repr(u8)]
@@ -25,11 +19,11 @@ pub enum MarketCreationError {
 pub enum OrderInsertionError {
     #[error("The specified market does not exist.")]
     MarketDoesNotExist,
-    #[error("The parameters on the order are illegal. Illegal parameters should be caught by the calling frontend if possible.")]
+    #[error("The provided order insertion parameters are illegal.")]
     IllegalParameters,
-    #[error("The order was killed (only for Fill-or-Kill orders).")]
+    #[error("Fill-or-Kill order was killed due to a lack of liquidity.")]
     OrderKilled,
-    #[error("There was not enough volume to fill the order (only for market or Fill-or-Kill orders).")]
+    #[error("Market order could not be filled due to a lack of liquidity.")]
     InadequateVolume,
     #[error("The insertion would result in a self-trade")]
     SelfTrade,
@@ -48,7 +42,7 @@ pub enum OrderCancellationError {
     AlreadyFilled,
     #[error("The specified order was already cancelled")]
     AlreadyCancelled,
-    #[error("Market that the Order is registered for (no longer) exists. Should never happen in practice.")]
+    #[error("Market that the Order is registered for (no longer) exists.")]
     MarketDoesNotExist,
     #[error("Order cannot be cancelled (because it is not a limit order)")]
     NotCancellable,
@@ -63,11 +57,11 @@ pub enum OrderModificationError {
     AlreadyFilled,
     #[error("User was not the one who created the order.")]
     Unauthorized,
-    #[error("Market that the Order is registered for (no longer) exists. Should never happen in practice.")]
+    #[error("Market that the Order is registered for (no longer) exists.")]
     MarketDoesNotExist,
     #[error("Specified new volume is not lower than the original volume; needs to be lower.")]
     VolumeNotLower,
-    #[error("Order could not be found in the Orderbook. Should never happen in practice.")]
+    #[error("Order could not be found in the Orderbook.")]
     OrderNotFound,
 }
 
