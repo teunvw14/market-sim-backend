@@ -12,71 +12,48 @@ use crate::{
     util::statics::MPSC_CAPACITY, util::types::*,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub enum Command {
-    OrderInsert(OrderInsertionRequest),
-    OrderCancel(OrderCancellationRequest),
-    OrderModify(OrderModificationRequest),
-    AddMarket(AssetIdPair),
-    GetBalance(AccountId, AssetId),
-    GetOrderbookL1(AssetIdPair),
-    GetOrderbookL2(AssetIdPair),
-    GetAssets(),
-    GetAllOrderbookL1(),
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub enum CommandResult {
-    OrderInsert(OrderInsertionResult),
-    OrderCancel(OrderCancellationResult),
-    OrderModify(OrderModificationResult),
-    AddMarket(MarketCreationResult),
-    GetBalance(Option<Balance>),
-    GetOrderbookL1(GetOrderBookL1Result),
-    GetOrderbookL2(GetOrderBookL2Result),
-    GetAssets(Vec<Asset>),
-    GetAllOrderbookL1(Vec<(AssetIdPair, OrderbookL1)>),
-}
-
-macro_rules! define_commands {
-    ( $($CommandName:ident, $ResultType:ty, $($CommandArgs:ty,)*;)+) => {
+/// Macro for defining the allowed commands to an Exchange. Saves having to
+/// repeat the CommandName (e.g. 'OrderInsert') for both the Command and
+/// CommandResult enum. Also implements From<R> -> CommandResult for each
+/// Command's expected return type R.
+macro_rules! define_exchange_commands {
+    ( $($CommandName:ident($($CommandArgs:ty),*), $ResultType:ty;)+) => {
+        // Define Command
         #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-        pub enum CommandByMacro {
+        pub enum Command {
             $($CommandName($($CommandArgs,)*),)+
         }
-    };
-}
 
-define_commands!{
-    OrderInsert, OrderInsertionResult, OrderInsertionRequest;
-    OrderCancel, OrderCancellationResult, OrderCancellationRequest;
-    GetBalance, Option<Balance>, AccountId, AssetId;
-}
+        // Define CommandResult
+        #[derive(Debug, Clone, PartialEq, Serialize)]
+        pub enum CommandResult {
+            $($CommandName($ResultType)),+
+        }
 
-// Impl conversions for the different CommandResult variants so that we can call
-// `.into` on the Result type to get a CommandResult
-macro_rules! from_result_to_command_result {
-    ( $($ResultType:ty, $CommandResultVariant:ident;)+) => {
+        // Impl conversions for the different CommandResult variants so that we
+        // can call `.into()` on the Result type to get a CommandResult
         $(
-            impl From<$ResultType> for CommandResult {
-                fn from(value: $ResultType) -> Self {
-                    CommandResult::$CommandResultVariant(value)
-                }
+        impl From<$ResultType> for CommandResult {
+            fn from(value: $ResultType) -> Self {
+                CommandResult::$CommandName(value)
             }
+        }
         )+
     };
 }
 
-from_result_to_command_result!(
-    OrderInsertionResult, OrderInsert;
-    OrderCancellationResult, OrderCancel;
-    OrderModificationResult, OrderModify;
-    MarketCreationResult, AddMarket;
-    Option<Balance>, GetBalance;
-    GetOrderBookL1Result, GetOrderbookL1;
-    GetOrderBookL2Result, GetOrderbookL2;
-);
-
+// Each line is a Command and the returned type for that command
+define_exchange_commands!{
+    OrderInsert(OrderInsertionRequest), OrderInsertionResult;
+    OrderCancel(OrderCancellationRequest), OrderCancellationResult;
+    OrderModify(OrderModificationRequest), OrderModificationResult;
+    AddMarket(AssetIdPair), MarketCreationResult;
+    GetBalance(AccountId, AssetId), Option<Balance>;
+    GetOrderbookL1(AssetIdPair), GetOrderBookL1Result;
+    GetOrderbookL2(AssetIdPair), GetOrderBookL2Result;
+    GetAssets(), Vec<Asset>;
+    GetAllOrderbookL1(), Vec<(AssetIdPair, OrderbookL1)>;
+}
 
 /// A buffer of commands for a specific market
 pub type CommandBuffer = VecDeque<Command>;
@@ -107,6 +84,11 @@ pub struct Exchange {
     transaction_buf: ObTransactionBuffer,
 }
 
+/// The handle is a thin wrapper around the Sender side of the command channel
+/// for the exchange. Under the hood, it's the same as the client, but it serves
+/// as a sort of "primary client". Concretely,  clients should be derived from
+/// it (using `get_client`), and it allows for controlling exchange shutdown,
+/// since dropping this handle is a requirement for shutdown.
 #[derive(Debug, Clone)]
 pub struct ExchangeHandle {
     pub tx_command_buf: mpsc::Sender<CommandBufferWithReplyChannel>,
@@ -127,6 +109,7 @@ pub struct Account {
 }
 
 impl Exchange {
+    /// Create a new exchange and handle to that exchange
     pub fn new() -> (Self, ExchangeHandle) {
         let (tx_command_buf, rx_command_buf) = mpsc::channel(MPSC_CAPACITY);
         (
