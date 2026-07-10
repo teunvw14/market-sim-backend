@@ -9,10 +9,15 @@ use backend::{
 /// consume both. Check that balances reflect expected amounts.
 #[tokio::test]
 async fn buy_sell_limit() {
-    let (exchange_handle, pair, acc_id_1, acc_id_2) = exchange_eur_usd_market_2_accs().await;
+    let (exchange_handle, mut pairs, mut accounts) = exchange_eur_usd_market_2_accs().await;
+
+    let acc_id_1 = accounts.pop().unwrap();
+    let acc_id_2 = accounts.pop().unwrap();
+    let pair = pairs.pop().unwrap();
+
+    let client = exchange_handle.get_client();
 
     let price: Price = Price::lit("0.85");
-    let client = exchange_handle.get_client();
     client
         .insert_order(OrderInsertionRequest {
             account_id: acc_id_1,
@@ -72,10 +77,15 @@ async fn buy_sell_limit() {
 /// consume both. Check that balances reflect expected amounts.
 #[tokio::test]
 async fn buy_sell_market() {
-    let (exchange_handle, pair, acc_id_1, acc_id_2) = exchange_eur_usd_market_2_accs().await;
+    let (exchange_handle, mut pairs, mut accounts) = exchange_eur_usd_market_2_accs().await;
+
+    let acc_id_1 = accounts.pop().unwrap();
+    let acc_id_2 = accounts.pop().unwrap();
+    let pair = pairs.pop().unwrap();
+
+    let client = exchange_handle.get_client();
 
     let price: Price = Price::lit("0.85");
-    let client = exchange_handle.get_client();
     client
         .insert_order(OrderInsertionRequest {
             account_id: acc_id_1,
@@ -133,7 +143,12 @@ async fn buy_sell_market() {
 /// Place and cancel single order, check that a cancelled order cannot be traded with.
 #[tokio::test]
 async fn cancel_order() {
-    let (exchange_handle, pair, acc_id_1, acc_id_2) = exchange_eur_usd_market_2_accs().await;
+    let (exchange_handle, mut pairs, mut accounts) = exchange_eur_usd_market_2_accs().await;
+
+    let acc_id_1 = accounts.pop().unwrap();
+    let acc_id_2 = accounts.pop().unwrap();
+    let pair = pairs.pop().unwrap();
+
     let client = exchange_handle.get_client();
 
     // Insert command and then immediately cancel
@@ -186,9 +201,14 @@ async fn cancel_order() {
 
 #[tokio::test]
 async fn modify_order() {
-    let (exchange_handle, pair, acc_id_1, acc_id_2) = exchange_eur_usd_market_2_accs().await;
+    let (exchange_handle, mut pairs, mut accounts) = exchange_eur_usd_market_2_accs().await;
+
+    let acc_id_1 = accounts.pop().unwrap();
+    let acc_id_2 = accounts.pop().unwrap();
+    let pair = pairs.pop().unwrap();
 
     let client = exchange_handle.get_client();
+
     let price: Price = Price::lit("0.85");
     let insertion_effects = client
         .insert_order(OrderInsertionRequest {

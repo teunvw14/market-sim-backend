@@ -33,13 +33,38 @@ import msgpack
 HOST = "127.0.0.1"
 PORT = 5555
 
-PAIR = (0, 1)          # (primary, secondary) asset ids
-PRICE_MEAN = 0.85
-PRICE_STDDEV = 0.01     # adjust to taste
+PAIRS = [
+    [0, 1],
+    [0, 2],
+    [0, 3],
+    [1, 2],
+    [1, 3],
+] # (primary, secondary) asset id
+PAIRS_NAMES = [
+    "USD/EUR",
+    "USD/JPY",
+    "USD/CHF",
+    "EUR/CHF",
+    "EUR/JPY",
+]
+PRICE_MEANS = [
+    0.87,
+    162.0,
+    0.81,
+    0.92,
+    186.0
+]
+PRICE_STDDEVS = [
+    0.05,
+    10,
+    0.03,
+    0.01,
+    12,
+]     # adjust to taste
 VOLUME_MEAN = 50
-SEND_INTERVAL_SECONDS = 1
+SEND_INTERVAL_SECONDS = 0.01
 
-ORDERS_PER_SEND = 1
+ORDERS_PER_SEND = 512
 CANCEL_PROBABILITY = 0.05  # chance, each iteration, of attempting a cancel instead of an insert
 MODIFY_PROBABILITY = 0.05  # chance, each iteration, of halving an existing order's volume
 
@@ -60,6 +85,8 @@ SIDES = {
     1: "Ask"
 }
 
+
+
 def encode_price(value: float) -> list:
     """Encode a float as the raw fixed-point bits (I33F31), matching the
     `fixed` crate's non-human-readable msgpack representation: a 1-element array."""
@@ -67,13 +94,12 @@ def encode_price(value: float) -> list:
     return [bits]
 
 
-def make_order_insert(account_id: int, order_type: int, side: int, price: float, volume: int) -> dict:
-    primary, secondary = PAIR
+def make_order_insert(account_id: int, order_type: int, side: int, price: float, volume: int, pair: list[int, int]) -> dict:
     return {
         "OrderInsert": [
             account_id,           # account_id: u32
             order_type,           # order_type
-            [primary, secondary], # pair: AssetIdPair { primary, secondary }
+            pair, # pair: AssetIdPair { primary, secondary }
             side,                 # side: "Ask" (1) | "Bid" (0)
             volume,                # volume: u32
             encode_price(price),  # price: I33F31 -> [bits]
@@ -136,7 +162,7 @@ def recv_frame(sock: socket.socket) -> bytes:
 def main():
     sock = socket.create_connection((HOST, PORT), timeout=5)
     sock.settimeout(5)  # so sendall() can't block forever if the server stops reading
-    print(f"Connected to {HOST}:{PORT}")
+    # print(f"Connected to {HOST}:{PORT}")
 
     start = time.time()
     total_inserted = 0
@@ -170,7 +196,7 @@ def main():
                 frame = encode_command_buffer([command])
 
                 sock.sendall(frame)
-                print(f"Sent OrderCancel  account={order['account_id']}  order_id={order['order_id']}")
+                # print(f"Sent OrderCancel  account={order['account_id']}  order_id={order['order_id']}")
 
                 total_cancel_attempts += 1
             elif do_modify:
@@ -181,8 +207,8 @@ def main():
                 frame = encode_command_buffer([command])
 
                 sock.sendall(frame)
-                print(f"Sent OrderModify  account={order['account_id']}  order_id={order['order_id']}  "
-                      f"volume {order['volume']} -> {new_volume}")
+                # print(f"Sent OrderModify  account={order['account_id']}  order_id={order['order_id']}  "
+                    #   f"volume {order['volume']} -> {new_volume}")
 
                 order["volume"] = new_volume
                 total_modify_attempts += 1
@@ -197,17 +223,22 @@ def main():
                 batch_volumes = []
 
                 for _ in range(ORDERS_PER_SEND):
-                    price = max(0.001, random.gauss(PRICE_MEAN, PRICE_STDDEV))
+                    pair_idx = random.randint(0, len(PAIRS)-1)
+                    pair = PAIRS[pair_idx]
+                    price_mean = PRICE_MEANS[pair_idx]
+                    price_stddev = PRICE_STDDEVS[pair_idx]
+                    pair_name = PAIRS_NAMES[pair_idx]
+                    price = max(0.001, random.gauss(price_mean, price_stddev))
                     volume = max(1, int(random.expovariate(1/VOLUME_MEAN)))
-                    commands.append(make_order_insert(account_id, order_type, side, price, volume))
+                    commands.append(make_order_insert(account_id, order_type, side, price, volume, pair))
                     batch_order_ids.append(next_order_id)
                     batch_volumes.append(volume)
                     next_order_id += 1
+                    # print(f"{pair_name}: Sending {SIDES[side]} {volume} @ {price:.2f} [{ORDER_TYPES[order_type]}] order account={account_id} order_id={next_order_id} volume= ")
 
                 frame = encode_command_buffer(commands)
 
                 sock.sendall(frame)
-                print(f"Sent {SIDES[side]} orders account={account_id}  order_ids={batch_order_ids} volume={batch_volumes} {ORDER_TYPES[order_type]}")
 
                 open_orders.extend(
                     {"order_id": oid, "account_id": account_id, "volume": volume}
@@ -218,9 +249,9 @@ def main():
                 total_inserted += ORDERS_PER_SEND
 
             response_bytes = recv_frame(sock)
-            print(f"  -> raw response ({len(response_bytes)} bytes): {response_bytes}")
+            # print(f"  -> raw response ({len(response_bytes)} bytes): {response_bytes}")
 
-            time.sleep(SEND_INTERVAL_SECONDS)
+            # time.sleep(SEND_INTERVAL_SECONDS)
     except KeyboardInterrupt:
         elapsed = time.time() - start
         rate = total_inserted / elapsed if elapsed > 0 else 0.0

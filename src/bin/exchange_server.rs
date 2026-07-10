@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, time::Duration};
+use std::{collections::HashMap, net::SocketAddr, time::Duration};
 
 use futures_util::sink::SinkExt;
 use tokio::net::{TcpListener, TcpStream};
@@ -8,7 +8,15 @@ use tracing::{Level, debug, info};
 use tracing_subscriber::FmtSubscriber;
 
 use backend::{
-    asset::AssetIdPair, exchange::*, exchange_client::ExchangeClient, util::{exchange_configs, format_exact_width::{pad_left, pad_right}, mp_command_codec::MpCommandCodec, statics::*},
+    asset::AssetIdPair,
+    exchange::*,
+    exchange_client::ExchangeClient,
+    util::{
+        exchange_configs,
+        format_exact_width::{pad_left, pad_right},
+        mp_command_codec::MpCommandCodec,
+        statics::*,
+    },
 };
 
 // Connections < 100 makes this reasonable.
@@ -62,32 +70,73 @@ fn get_tracing_subscriber() -> FmtSubscriber {
         .finish()
 }
 
-async fn monitor_market(client: ExchangeClient, pair: AssetIdPair) {
-    let get_l1_command = Command::GetOrderbookL1(pair);
+async fn monitor_markets(client: ExchangeClient) {
+    let get_all_l1_command = Command::GetAllOrderbookL1();
     let mut interval = tokio::time::interval(Duration::from_millis(100));
-    let mut last_message = String::new();
+    let mut last_messages: HashMap<AssetIdPair, String> = HashMap::new();
 
-    let price_width = 6;
+    let assets = client.get_assets().await;
+
+    let price_width = 7;
     let vol_width = 4;
     let full_width = price_width + vol_width + 1;
     loop {
-        let result = client.send_commands([get_l1_command].into()).await
+        let result = client
+            .send_commands([get_all_l1_command].into())
+            .await
             .pop_back()
             .unwrap();
-        if let CommandResult::GetOrderbookL1(result_l1) = result {
-            if let Ok(l1) = result_l1 {
-                let bid_text = match l1.best_bid {
-                    None => pad_right(String::from(" -"), full_width),
-                    Some(price_aggr) => format!("{} {}", pad_right(price_aggr.volume, vol_width), pad_left(format!("{:.3}", price_aggr.price), price_width)),
-                };
-                let ask_text = match l1.best_ask {
-                    None => pad_left(String::from("- "), full_width),
-                    Some(price_aggr) => format!("{} {}", pad_right(format!("{:.3}", price_aggr.price), price_width), pad_left(price_aggr.volume, vol_width)),
-                };
-                let new_message= format!("EUR/USD: [Bid {} | {} Ask]", bid_text, ask_text);
-                if new_message != last_message {
-                    last_message = new_message;
-                    info!("{last_message}");
+        let result_l1s = match result {
+            CommandResult::GetAllOrderbookL1(l1s) => l1s,
+            _ => panic!(),
+        };
+        for (pair, l1) in result_l1s {
+            let bid_text = match l1.best_bid {
+                None => pad_right(String::from(" -"), full_width),
+                Some(price_aggr) => format!(
+                    "{} {}",
+                    pad_right(price_aggr.volume, vol_width),
+                    pad_left(format!("{:.3}", price_aggr.price), price_width)
+                ),
+            };
+            let ask_text = match l1.best_ask {
+                None => pad_left(String::from("- "), full_width),
+                Some(price_aggr) => format!(
+                    "{} {}",
+                    pad_right(format!("{:.3}", price_aggr.price), price_width),
+                    pad_left(price_aggr.volume, vol_width)
+                ),
+            };
+
+            let primary_symbol = assets
+                .iter()
+                .find(|asset| asset.id == pair.primary)
+                .unwrap()
+                .symbol
+                .clone();
+            let secondary_symbol = assets
+                .iter()
+                .find(|asset| asset.id == pair.secondary)
+                .unwrap()
+                .symbol
+                .clone();
+            let new_message = format!(
+                "{primary_symbol}/{secondary_symbol}: [Bid {} | {} Ask]",
+                bid_text, ask_text
+            );
+
+            // Check if a message was already set, and if so, if the new message is actually different from the previous one.
+            let last_message = last_messages.get_mut(&pair);
+            match last_message {
+                None => {
+                    info!("{new_message}");
+                    last_messages.insert(pair, new_message);
+                }
+                Some(message) => {
+                    if new_message != *message {
+                        info!("{new_message}");
+                        last_messages.insert(pair, new_message);
+                    }
                 }
             }
         }
@@ -103,14 +152,14 @@ async fn main() {
         .expect("Tracing subscriber should be set successfully.");
 
     // Initialize Exchange and TcpListener
-    let (exchange_handle, pair, _id1, _id2) =
-        exchange_configs::exchange_eur_usd_market_2_accs().await;
+    let (exchange_handle, _pairs, _accounts) =
+        exchange_configs::exchange_5fx_markets_5_accs().await;
     let bind_addr = "127.0.0.1:5555";
     let listener = TcpListener::bind(bind_addr).await.unwrap();
 
     // Start monitor for market
     let monitor_client = exchange_handle.get_client();
-    tokio::task::spawn(monitor_market(monitor_client, pair));
+    tokio::task::spawn(monitor_markets(monitor_client));
 
     // Clear terminal screen and reset cursor to (1, 1), then print start message
     print!("\x1B[2J\x1b[1;1H");

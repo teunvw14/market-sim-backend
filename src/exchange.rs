@@ -43,7 +43,7 @@ macro_rules! define_exchange_commands {
 }
 
 // Each line is a Command and the returned type for that command
-define_exchange_commands!{
+define_exchange_commands! {
     OrderInsert(OrderInsertionRequest), OrderInsertionResult;
     OrderCancel(OrderCancellationRequest), OrderCancellationResult;
     OrderModify(OrderModificationRequest), OrderModificationResult;
@@ -76,7 +76,7 @@ pub struct Transaction {
 
 pub struct Exchange {
     accounts: HashMap<AccountId, Account>,
-    traded_assets: HashMap<AssetId, Asset>,
+    traded_assets: Vec<Asset>,
     balance_book: BalanceBook,
     markets: Markets,
     rx_command_buf: mpsc::Receiver<CommandBufferWithReplyChannel>,
@@ -115,7 +115,7 @@ impl Exchange {
         (
             Exchange {
                 accounts: HashMap::new(),
-                traded_assets: HashMap::new(),
+                traded_assets: Vec::new(),
                 balance_book: BalanceBook::new(),
                 markets: Markets::new(),
                 session_orders: HashMap::new(),
@@ -135,7 +135,7 @@ impl Exchange {
             name,
             symbol,
         };
-        self.traded_assets.insert(new_id, new_asset.clone());
+        self.traded_assets.push(new_asset);
 
         // Update balance book to include new asset
         self.balance_book.add_asset();
@@ -143,8 +143,12 @@ impl Exchange {
         new_id
     }
 
-    pub fn remove_asset(&mut self, asset_id: AssetId) {
-        self.traded_assets.remove(&asset_id);
+    /// Check if an asset is traded on the exchange.
+    pub fn is_traded_asset(&self, asset_id: AssetId) -> bool {
+        self.traded_assets
+            .iter()
+            .map(|asset| asset.id)
+            .any(|id| id == asset_id)
     }
 
     pub fn create_account(&mut self) -> AccountId {
@@ -176,12 +180,12 @@ impl Exchange {
         new_id
     }
 
-    pub fn add_market(&mut self, asset_pair: AssetIdPair) -> MarketCreationResult {
+    pub fn add_market(&mut self, pair: AssetIdPair) -> MarketCreationResult {
         // Market can only be created for listed assets
-        if !(self.traded_assets.contains_key(&asset_pair.primary) && self.traded_assets.contains_key(&asset_pair.secondary)) {
+        if !self.is_traded_asset(pair.secondary) || !self.is_traded_asset(pair.secondary) {
             return Err(MarketCreationError::AssetNotTraded);
         }
-        self.markets.add_market(asset_pair)
+        self.markets.add_market(pair)
     }
 
     pub fn run(self) {
@@ -227,8 +231,8 @@ impl Exchange {
             }
             Command::GetOrderbookL1(pair) => self.get_orderbook_l1(pair).into(),
             Command::GetOrderbookL2(pair) => self.get_orderbook_l2(pair).into(),
-            Command::GetAssets() => unimplemented!(),
-            Command::GetAllOrderbookL1() => unimplemented!(),
+            Command::GetAssets() => self.traded_assets.clone().into(),
+            Command::GetAllOrderbookL1() => self.get_all_orderbook_l1().into(),
         };
         response_buf.push_back(result);
     }
@@ -428,12 +432,20 @@ impl Exchange {
             .ok_or(GetOrderbookError::MarketDoesNotExist)?;
         Ok(market.get_l1())
     }
-    
+
     fn get_orderbook_l2(&self, pair: AssetIdPair) -> GetOrderBookL2Result {
         let market = self
             .markets
             .get(&pair)
             .ok_or(GetOrderbookError::MarketDoesNotExist)?;
         Ok(market.get_l2())
+    }
+
+    fn get_all_orderbook_l1(&self) -> Vec<(AssetIdPair, OrderbookL1)> {
+        let mut result = Vec::with_capacity(self.markets.keys.len());
+        for market in &self.markets.inner {
+            result.push((market.asset_pair, market.get_l1()));
+        }
+        result
     }
 }

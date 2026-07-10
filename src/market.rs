@@ -35,12 +35,11 @@ pub type OrderInsertionResult = Result<OrderInsertionEffects, OrderInsertionErro
 pub type OrderCancellationResult = Result<(), OrderCancellationError>;
 pub type OrderModificationResult = Result<(), OrderModificationError>;
 
-
 #[derive(Debug, Clone)]
 pub struct Market {
     pub asset_pair: AssetIdPair,
     pub last_traded_price: Price,
-    pub orderbook: Orderbook
+    pub orderbook: Orderbook,
 }
 
 impl Market {

@@ -1,5 +1,6 @@
 use tokio::sync::{mpsc, oneshot};
 
+use crate::asset::{Asset, AssetIdPair};
 use crate::errors::*;
 
 use crate::{
@@ -25,14 +26,20 @@ impl ExchangeClient {
         let command = Command::OrderInsert(order_insertion_req);
         let buf: CommandBuffer = vec![command].into();
         let mut result_buf = self.send_commands(buf).await;
-        if let Some(result) = result_buf.pop_front() {
-            match result {
-                CommandResult::OrderInsert(res) => res,
-                _ => Err(OrderInsertionError::Other),
-            }
-        } else {
-            Err(OrderInsertionError::Other)
+        match result_buf.pop_front() {
+            Some(CommandResult::OrderInsert(result)) => return result,
+            _ => unreachable!(),
         }
+    }
+
+    pub async fn get_assets(&self) -> Vec<Asset> {
+        let command = Command::GetAssets();
+        let buf: CommandBuffer = vec![command].into();
+        let mut result_buf = self.send_commands(buf).await;
+        match result_buf.pop_front() {
+            Some(CommandResult::GetAssets(result)) => return result,
+            _ => unreachable!(),
+        };
     }
 
     pub async fn get_balance(&self, account_id: AccountId, asset_id: AssetId) -> Option<Balance> {
