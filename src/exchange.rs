@@ -12,10 +12,13 @@ use crate::{
     util::statics::MPSC_CAPACITY, util::types::*,
 };
 
-/// Macro for defining the allowed commands to an Exchange. Saves having to
-/// repeat the CommandName (e.g. 'OrderInsert') for both the Command and
-/// CommandResult enum. Also implements From<R> -> CommandResult for each
-/// Command's expected return type R.
+/// Macro for defining the allowed commands to an Exchange. Creates Command
+/// and CommandResult enums, as well as From<R> -> CommandResult impl's for
+/// each result type R.
+///
+/// This macro saves having to repeat the CommandName (e.g. 'OrderInsert') for
+/// both the Command and CommandResult enum. Also saves having to manually
+/// implement From<R> -> CommandResult for each new Command's return type R.
 macro_rules! define_exchange_commands {
     ( $($CommandName:ident($($CommandArgs:ty),*), $ResultType:ty;)+) => {
         // Define Command
@@ -42,7 +45,12 @@ macro_rules! define_exchange_commands {
     };
 }
 
-// Each line is a Command and the returned type for that command
+// Each line "CommandName(Args), ResultType;" defines a unique command and the
+// type returned internally (i.e. before it is wrapped in a CommandResult type)
+// by that command.
+//
+// Note: due to how the macro is defined, duplicate result types will cause
+// duplicate From impl's resulting in an error.
 define_exchange_commands! {
     OrderInsert(OrderInsertionRequest), OrderInsertionResult;
     OrderCancel(OrderCancellationRequest), OrderCancellationResult;

@@ -4,7 +4,7 @@ use futures_util::sink::SinkExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
-use tracing::{Level, debug, info};
+use tracing::{Level, info};
 use tracing_subscriber::FmtSubscriber;
 
 use backend::{
