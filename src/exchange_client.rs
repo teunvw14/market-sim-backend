@@ -9,6 +9,7 @@ use crate::{
     },
     market::*,
     order::*,
+    orderbook::*,
     util::types::*,
 };
 
@@ -38,6 +39,16 @@ impl ExchangeClient {
         let mut result_buf = self.send_commands(buf).await;
         match result_buf.pop_front() {
             Some(CommandResult::GetAssets(result)) => return result,
+            _ => unreachable!(),
+        };
+    }
+
+    pub async fn get_all_l1(&self) -> Vec<(AssetIdPair, OrderbookL1)> {
+        let command = Command::GetAllOrderbookL1();
+        let buf: CommandBuffer = vec![command].into();
+        let mut result_buf = self.send_commands(buf).await;
+        match result_buf.pop_front() {
+            Some(CommandResult::GetAllOrderbookL1(result)) => return result,
             _ => unreachable!(),
         };
     }

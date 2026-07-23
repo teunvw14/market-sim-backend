@@ -13,6 +13,7 @@ impl MpCommandCodec {
     }
 }
 
+// Encoder, only for testing. 
 impl<Item: Serialize> Encoder<Item> for MpCommandCodec {
     type Error = std::io::Error;
     fn encode(&mut self, item: Item, dst: &mut BytesMut) -> Result<(), Self::Error> {

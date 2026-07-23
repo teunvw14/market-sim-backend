@@ -1,9 +1,14 @@
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{collections::HashMap, net::SocketAddr, time::Duration};
 
+use bytes::BytesMut;
 use futures_util::sink::SinkExt;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::select;
 use tokio_stream::StreamExt;
-use tokio_util::codec::Framed;
+use tokio_tungstenite::WebSocketStream;
+use tokio_tungstenite::tungstenite::{Message, Bytes, Utf8Bytes};
+use tokio_util::codec::{Encoder, Framed};
 use tracing::{Level, info};
 use tracing_subscriber::FmtSubscriber;
 
@@ -22,6 +27,8 @@ use backend::{
 // Connections < 100 makes this reasonable.
 // TODO: make configurable
 const BUFFER_SIZE: usize = MB / 2;
+
+const ONE_SECOND: Duration = Duration::from_secs(1);
 
 /// Handle a connection to the exchange server.
 async fn handle_connection(
@@ -53,6 +60,33 @@ async fn handle_connection(
         }
     }
 }
+
+async fn handle_connection_ws(
+    mut ws_stream: WebSocketStream<TcpStream>,
+    addr: SocketAddr,
+    client: ExchangeClient,
+) {
+    info!("New WebSocket connection: {addr}");
+
+    // Send asset information
+    let all_assets = client.get_assets().await;
+    if let Ok(bytes) = rmp_serde::to_vec(&all_assets) {            
+        let message = Message::Binary(bytes.into());
+        _ = ws_stream.send(message).await;
+    }
+    
+    // Send l1 data in a loop
+    loop {        
+        let all_l1s = client.get_all_l1().await;
+        if let Ok(bytes) = rmp_serde::to_vec(&all_l1s) {            
+            let message = Message::Binary(bytes.into());
+            _ = ws_stream.send(message).await;
+        }
+        
+        tokio::time::sleep(ONE_SECOND).await;
+    }
+}
+
 
 /// FmtSubscriber for debug builds
 #[cfg(debug_assertions)]
@@ -151,11 +185,16 @@ async fn main() {
     tracing::subscriber::set_global_default(subscriber)
         .expect("Tracing subscriber should be set successfully.");
 
-    // Initialize Exchange and TcpListener
+    // Initialize Exchange
     let (exchange_handle, _pairs, _accounts) =
         exchange_configs::exchange_5fx_markets_5_accs().await;
-    let bind_addr = "127.0.0.1:5555";
-    let listener = TcpListener::bind(bind_addr).await.unwrap();
+
+    // Bind TcpListener for client server and WebSocket server
+    let bind_addr_client = "127.0.0.1:5555";
+    let listener_client = TcpListener::bind(bind_addr_client).await.unwrap();
+    
+    let bind_addr_ws = "127.0.0.1:5556";
+    let listener_ws = TcpListener::bind(bind_addr_ws).await.unwrap();
 
     // Start monitor for market
     let monitor_client = exchange_handle.get_client();
@@ -163,18 +202,26 @@ async fn main() {
 
     // Clear terminal screen and reset cursor to (1, 1), then print start message
     print!("\x1B[2J\x1b[1;1H");
-    info!("Exchange server started and listening at {bind_addr}.");
+    info!("Exchange server started and listening at {bind_addr_client}.");
 
     // Run core loop, spawning a Tokio `Task` for each connection
     loop {
-        if let Ok((stream, addr)) = listener.accept().await {
-            let exchange_client = exchange_handle.get_client();
-            tokio::task::spawn(handle_connection(
-                stream,
-                addr,
-                exchange_client,
-                BUFFER_SIZE,
-            ));
+        select! {
+            Ok((stream, addr)) = listener_client.accept() => {
+                let exchange_client = exchange_handle.get_client();
+                tokio::task::spawn(handle_connection(
+                    stream,
+                    addr,
+                    exchange_client,
+                    BUFFER_SIZE,
+                ));
+            },
+            Ok((stream, addr)) = listener_ws.accept() => {
+                if let Ok(stream_ws) = tokio_tungstenite::accept_async(stream).await {
+                    let exchange_client = exchange_handle.get_client();
+                    tokio::task::spawn(handle_connection_ws(stream_ws, addr, exchange_client));
+                }
+            }
         }
     }
 }

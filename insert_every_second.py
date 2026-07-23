@@ -62,9 +62,9 @@ PRICE_STDDEVS = [
     12,
 ]     # adjust to taste
 VOLUME_MEAN = 50
-SEND_INTERVAL_SECONDS = 0.01
+SEND_INTERVAL_SECONDS = 0.25
 
-ORDERS_PER_SEND = 512
+ORDERS_PER_SEND = 1
 CANCEL_PROBABILITY = 0.05  # chance, each iteration, of attempting a cancel instead of an insert
 MODIFY_PROBABILITY = 0.05  # chance, each iteration, of halving an existing order's volume
 
@@ -251,7 +251,7 @@ def main():
             response_bytes = recv_frame(sock)
             # print(f"  -> raw response ({len(response_bytes)} bytes): {response_bytes}")
 
-            # time.sleep(SEND_INTERVAL_SECONDS)
+            time.sleep(SEND_INTERVAL_SECONDS)
     except KeyboardInterrupt:
         elapsed = time.time() - start
         rate = total_inserted / elapsed if elapsed > 0 else 0.0
