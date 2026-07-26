@@ -131,23 +131,21 @@ impl Markets {
     }
 
     pub fn get(&self, key: &AssetIdPair) -> Option<&Market> {
-        let mut result = None;
         for market in &self.inner {
             if market.asset_pair == *key {
-                result = Some(market);
+                return Some(market);
             }
         }
-        result
+        None
     }
 
     pub fn get_mut(&mut self, key: &AssetIdPair) -> Option<&mut Market> {
-        let mut result = None;
         for market in &mut self.inner {
             if market.asset_pair == *key {
-                result = Some(market);
+                return Some(market);
             }
         }
-        result
+        None
     }
 
     pub fn add_market(&mut self, asset_pair: AssetIdPair) -> MarketCreationResult {

@@ -189,7 +189,7 @@ impl Exchange {
 
     pub fn add_market(&mut self, pair: AssetIdPair) -> MarketCreationResult {
         // Market can only be created for listed assets
-        if !self.is_traded_asset(pair.secondary) || !self.is_traded_asset(pair.secondary) {
+        if !self.is_traded_asset(pair.primary) || !self.is_traded_asset(pair.secondary) {
             return Err(MarketCreationError::AssetNotTraded);
         }
         self.markets.add_market(pair)
@@ -290,7 +290,7 @@ impl Exchange {
                 maker_order.status = OrderExecutionStatus::Filled;
             }
             if taker_order.remaining_volume == 0 {
-                maker_order.status = OrderExecutionStatus::Filled;
+                taker_order.status = OrderExecutionStatus::Filled;
             }
 
             // Update balances

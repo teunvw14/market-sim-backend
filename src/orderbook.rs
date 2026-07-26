@@ -159,7 +159,8 @@ impl Orderbook {
                     } else {
                         order.remaining_volume -= modification.volume_reduction;
                     };
-                    result = Ok(())
+                    result = Ok(());
+                    break;
                 }
             }
             if let Some(idx) = remove_index {
