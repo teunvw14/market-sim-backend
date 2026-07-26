@@ -1,24 +1,22 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::{collections::HashMap, net::SocketAddr, time::Duration};
+use std::time::{Instant};
+use std::{net::SocketAddr, time::Duration};
 
-use bytes::BytesMut;
 use futures_util::sink::SinkExt;
+use hdrhistogram::{Histogram, SyncHistogram};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::select;
 use tokio_stream::StreamExt;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::{Message, Bytes, Utf8Bytes};
-use tokio_util::codec::{Encoder, Framed};
-use tracing::{Level, info};
+use tokio_util::codec::{Framed};
+use tracing::{Level, info, debug};
 use tracing_subscriber::FmtSubscriber;
+use hdrhistogram::sync::{Recorder};
 
 use backend::{
-    asset::AssetIdPair,
-    exchange::*,
     exchange_client::ExchangeClient,
     util::{
         exchange_configs,
-        format_exact_width::{pad_left, pad_right},
         mp_command_codec::MpCommandCodec,
         statics::*,
     },
@@ -28,13 +26,30 @@ use backend::{
 // TODO: make configurable
 const BUFFER_SIZE: usize = MB / 2;
 
-const ONE_SECOND: Duration = Duration::from_secs(1);
+const SECOND: Duration = Duration::from_secs(1);
+const MINUTE: Duration = Duration::from_secs(60);
+
+
+fn handle_metrics(mut sync_hist: SyncHistogram<u64>) {
+    loop {
+        let refresh_timeout = Duration::from_millis(100);
+        sync_hist.refresh_timeout(refresh_timeout);
+        let p50 = sync_hist.value_at_quantile(0.5f64);
+        let p90 = sync_hist.value_at_quantile(0.9f64);
+        let p999 = sync_hist.value_at_quantile(0.999f64);
+        info!("Latency: p50: {p50}, p90: {p90} p99.9: {p999}");
+        sync_hist.clear();
+        std::thread::sleep(MINUTE);
+    }
+}
+
 
 /// Handle a connection to the exchange server.
 async fn handle_connection(
     stream: TcpStream,
     addr: SocketAddr,
     client: ExchangeClient,
+    mut metrics_recorder: Recorder<u64>,
     buffer_size: usize,
 ) {
     info!("New connection: {addr}");
@@ -53,9 +68,13 @@ async fn handle_connection(
                 break;
             }
             Some(Ok(decoded_commands)) => {
+                let start = Instant::now();
                 // Insert commands and send result
+                let num_commands = decoded_commands.len();
                 let res = client.send_commands(decoded_commands).await;
+                let latency = start.elapsed();
                 framed_stream.send(res).await.unwrap();
+                let _ = metrics_recorder.record_n(latency.as_micros() as u64, num_commands as u64);
             }
         }
     }
@@ -83,7 +102,7 @@ async fn handle_connection_ws(
             _ = ws_stream.send(message).await;
         }
         
-        tokio::time::sleep(ONE_SECOND).await;
+        tokio::time::sleep(Duration::from_millis(10)).await;
     }
 }
 
@@ -104,79 +123,6 @@ fn get_tracing_subscriber() -> FmtSubscriber {
         .finish()
 }
 
-async fn monitor_markets(client: ExchangeClient) {
-    let get_all_l1_command = Command::GetAllOrderbookL1();
-    let mut interval = tokio::time::interval(Duration::from_millis(100));
-    let mut last_messages: HashMap<AssetIdPair, String> = HashMap::new();
-
-    let assets = client.get_assets().await;
-
-    let price_width = 7;
-    let vol_width = 4;
-    let full_width = price_width + vol_width + 1;
-    loop {
-        let result = client
-            .send_commands([get_all_l1_command].into())
-            .await
-            .pop_back()
-            .unwrap();
-        let result_l1s = match result {
-            CommandResult::GetAllOrderbookL1(l1s) => l1s,
-            _ => panic!(),
-        };
-        for (pair, l1) in result_l1s {
-            let bid_text = match l1.best_bid {
-                None => pad_right(String::from(" -"), full_width),
-                Some(price_aggr) => format!(
-                    "{} {}",
-                    pad_right(price_aggr.volume, vol_width),
-                    pad_left(format!("{:.3}", price_aggr.price), price_width)
-                ),
-            };
-            let ask_text = match l1.best_ask {
-                None => pad_left(String::from("- "), full_width),
-                Some(price_aggr) => format!(
-                    "{} {}",
-                    pad_right(format!("{:.3}", price_aggr.price), price_width),
-                    pad_left(price_aggr.volume, vol_width)
-                ),
-            };
-
-            let primary_symbol = assets
-                .iter()
-                .find(|asset| asset.id == pair.primary)
-                .unwrap()
-                .symbol
-                .clone();
-            let secondary_symbol = assets
-                .iter()
-                .find(|asset| asset.id == pair.secondary)
-                .unwrap()
-                .symbol
-                .clone();
-            let new_message = format!(
-                "{primary_symbol}/{secondary_symbol}: [Bid {} | {} Ask]",
-                bid_text, ask_text
-            );
-
-            // Check if a message was already set, and if so, if the new message is actually different from the previous one.
-            let last_message = last_messages.get_mut(&pair);
-            match last_message {
-                None => {
-                    info!("{new_message}");
-                    last_messages.insert(pair, new_message);
-                }
-                Some(message) => {
-                    if new_message != *message {
-                        info!("{new_message}");
-                        last_messages.insert(pair, new_message);
-                    }
-                }
-            }
-        }
-        interval.tick().await;
-    }
-}
 
 #[tokio::main]
 async fn main() {
@@ -196,9 +142,10 @@ async fn main() {
     let bind_addr_ws = "127.0.0.1:5556";
     let listener_ws = TcpListener::bind(bind_addr_ws).await.unwrap();
 
-    // Start monitor for market
-    let monitor_client = exchange_handle.get_client();
-    tokio::task::spawn(monitor_markets(monitor_client));
+    // Enable metrics HDRHistogram
+    let sync_hist = SyncHistogram::from(Histogram::<u64>::new_with_bounds(1, 1_000_000, 3).unwrap());
+    let mut prime_recorder = sync_hist.recorder().into_idle();
+    std::thread::spawn(|| handle_metrics(sync_hist));
 
     // Clear terminal screen and reset cursor to (1, 1), then print start message
     print!("\x1B[2J\x1b[1;1H");
@@ -209,10 +156,14 @@ async fn main() {
         select! {
             Ok((stream, addr)) = listener_client.accept() => {
                 let exchange_client = exchange_handle.get_client();
+                let active_recorder = prime_recorder.activate();
+                let metrics_recorder = active_recorder.clone();
+                prime_recorder = active_recorder.into_idle();
                 tokio::task::spawn(handle_connection(
                     stream,
                     addr,
                     exchange_client,
+                    metrics_recorder,
                     BUFFER_SIZE,
                 ));
             },

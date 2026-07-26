@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
@@ -88,7 +87,7 @@ pub struct Exchange {
     balance_book: BalanceBook,
     markets: Markets,
     rx_command_buf: mpsc::Receiver<CommandBufferWithReplyChannel>,
-    session_orders: HashMap<OrderId, PlacedOrder>,
+    session_orders: Vec<(OrderId, PlacedOrder)>,
     transaction_buf: ObTransactionBuffer,
 }
 
@@ -126,7 +125,7 @@ impl Exchange {
                 traded_assets: Vec::new(),
                 balance_book: BalanceBook::new(),
                 markets: Markets::new(),
-                session_orders: HashMap::new(),
+                session_orders: Vec::with_capacity(10_000_000),
                 rx_command_buf,
                 transaction_buf: Vec::new(),
             },
@@ -261,7 +260,7 @@ impl Exchange {
 
         // Insert OpenOrder
         let open_order = PlacedOrder::from_insertion(&insertion);
-        self.session_orders.insert(new_id, open_order);
+        self.session_orders.push((new_id, open_order));
 
         // Process transactions resulting from order insertion
         self.process_transactions(insertion_req.pair);
@@ -279,10 +278,10 @@ impl Exchange {
             let volume_primary = Balance::from(transaction.volume);
             let volume_secondary = volume_primary * transaction.price;
 
-            let [maker_order, taker_order] = self
+            let [(_maker_order_id, maker_order), (_taker_order_id, taker_order)] = self
                 .session_orders
-                .get_disjoint_mut([&transaction.order_id_maker, &transaction.order_id_taker])
-                .map(|opt| opt.expect("Order should exist because it is created upon insertion."));
+                .get_disjoint_mut([transaction.order_id_maker, transaction.order_id_taker])
+                .expect("get_disjoint_mut should never error, since order id's should be valid, and self-trades cannot happen.");
 
             // Update order remaining volume
             maker_order.remaining_volume -= transaction.volume;
@@ -346,9 +345,9 @@ impl Exchange {
         debug!("Cancellation request: order {}", cancellation_req.order_id);
 
         // Look up order
-        let order = self
+        let (_id, order) = self
             .session_orders
-            .get_mut(&cancellation_req.order_id)
+            .iter_mut().find(|(id, _order)| id == &cancellation_req.order_id)
             .ok_or(OrderCancellationError::OrderDoesNotExist)?;
 
         if order.account_id != cancellation_req.account_id {
@@ -389,9 +388,9 @@ impl Exchange {
         );
 
         // Look up order
-        let order = self
+        let (_id, order) = self
             .session_orders
-            .get_mut(&modification_req.order_id)
+            .iter_mut().find(|(id, _order)| id == &modification_req.order_id)
             .ok_or(OrderModificationError::OrderDoesNotExist)?;
 
         if order.account_id != modification_req.account_id {
