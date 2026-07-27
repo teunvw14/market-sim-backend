@@ -7,7 +7,22 @@ Design is optimized for a small number (<100) of connections, low latency and hi
 
 # Connections
 
+Two types of connections are supported: TCP and WebSocket.
+
+
+- The TCP server is for clients that want to interact with the exchange. It lets these clients do CRUD-like operations for orders, and exposes market state (orderbooks L1/L2).
+- The WebSocket server is exclusively for displaying exchange state in browsers. It does not allow for interacting with the exchange (e.g. orders cannot be placed over WebSocket). The WebSocket server works with a subscribe-by-default model: exchange state / metrics are sent at a constant rate to open connections.
+
+## TCP server description
+
 A `TCPListener` accepts connections, and spawns a new `tokio::task` for each. Clients send `CommandBuffer`s encoded with MessagePack, prepended with message length for framing (also see `command-framing.md`). Each connection gets an `ExchangeClient` object through which commands can be sent. These structs are simply around a `MPSC` transmitter object - the receiver is held by the Exchange, which is ran on a single thread.
+
+## WebSocket server description
+A `TCPListener` accepts connections, tries to turn each into a `WebSocketStream`, and then spawns a new `tokio::task` to handle each one. The state of the exchange (see below) is sent at a constant time interval. Connections are never read from. 
+
+### ExchangeState
+
+The `ExchangeState` struct includes all market L1's and a `ExchangeMetrics` object, containing the p50, p99 and p99.9 command processing latency percentiles.
 
 # Exchange Threading
 

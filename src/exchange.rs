@@ -347,7 +347,8 @@ impl Exchange {
         // Look up order
         let (_id, order) = self
             .session_orders
-            .iter_mut().find(|(id, _order)| id == &cancellation_req.order_id)
+            .iter_mut()
+            .find(|(id, _order)| id == &cancellation_req.order_id)
             .ok_or(OrderCancellationError::OrderDoesNotExist)?;
 
         if order.account_id != cancellation_req.account_id {
@@ -390,7 +391,8 @@ impl Exchange {
         // Look up order
         let (_id, order) = self
             .session_orders
-            .iter_mut().find(|(id, _order)| id == &modification_req.order_id)
+            .iter_mut()
+            .find(|(id, _order)| id == &modification_req.order_id)
             .ok_or(OrderModificationError::OrderDoesNotExist)?;
 
         if order.account_id != modification_req.account_id {

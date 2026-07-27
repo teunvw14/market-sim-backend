@@ -56,9 +56,3 @@ impl BalanceBook {
         self.accounts += 1;
     }
 }
-
-impl Drop for BalanceBook {
-    fn drop(&mut self) {
-        dbg!("Dropping balancebook {self:?}");
-    }
-}
