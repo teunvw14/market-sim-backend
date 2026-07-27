@@ -289,8 +289,8 @@ def sender_loop(params: Params, stats: Stats, stop_event: threading.Event,
 SLIDERS = [
     # (attribute, label, from, to, resolution)
     ("send_interval_seconds", "Send interval (s)", 0.0, 1.0, 0.005),
-    ("orders_per_send", "Orders per send", 1, 100, 1),
-    ("volume_mean", "Volume mean", 1, 500, 1),
+    ("orders_per_send", "Orders per send", 1, 512, 1),
+    ("volume_mean", "Volume mean", 1, 1000, 1),
     ("cancel_probability", "Cancel probability", 0.0, 1.0, 0.01),
     ("modify_probability", "Modify probability", 0.0, 1.0, 0.01),
     ("market_order_probability", "Market probability", 0.0, 1.0, 0.01),
