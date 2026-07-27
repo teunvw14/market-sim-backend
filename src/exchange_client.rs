@@ -3,6 +3,7 @@ use tokio::sync::{mpsc, oneshot};
 use crate::asset::{Asset, AssetIdPair};
 use crate::errors::*;
 
+use crate::exchange::Transaction;
 use crate::{
     exchange::{
         Command, CommandBuffer, CommandBufferWithReplyChannel, CommandResult, CommandResultBuffer,
@@ -49,6 +50,16 @@ impl ExchangeClient {
         let mut result_buf = self.send_commands(buf).await;
         match result_buf.pop_front() {
             Some(CommandResult::GetAllOrderbookL1(result)) => return result,
+            _ => unreachable!(),
+        };
+    }
+
+    pub async fn get_last_100_transactions(&self) -> Vec<Transaction> {
+        let command = Command::GetLast100Transactions();
+        let buf: CommandBuffer = vec![command].into();
+        let mut result_buf = self.send_commands(buf).await;
+        match result_buf.pop_front() {
+            Some(CommandResult::GetLast100Transactions(result)) => return result,
             _ => unreachable!(),
         };
     }

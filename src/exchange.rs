@@ -1,4 +1,5 @@
 use std::collections::{HashMap, VecDeque};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
@@ -60,6 +61,7 @@ define_exchange_commands! {
     GetOrderbookL2(AssetIdPair), GetOrderBookL2Result;
     GetAssets(), Vec<Asset>;
     GetAllOrderbookL1(), Vec<(AssetIdPair, OrderbookL1)>;
+    GetLast100Transactions(), Vec<Transaction>;
 }
 
 /// A buffer of commands for a specific market
@@ -73,12 +75,47 @@ pub struct CommandBufferWithReplyChannel {
     pub tx_reply: oneshot::Sender<CommandResultBuffer>,
 }
 
+/// A ringbuffer of recent transactions.
+pub struct RecentTransactions {
+    inner: Vec<Transaction>,
+    write_idx: usize,
+}
+
+impl RecentTransactions {
+    pub fn with_capacity(capacity: usize) -> RecentTransactions {
+        RecentTransactions {
+            inner: Vec::with_capacity(capacity),
+            write_idx: 0,
+        }
+    }
+
+    pub fn get(&self) -> Vec<Transaction> {
+        let mut result = self.inner.clone();
+        result.rotate_left(self.write_idx % self.inner.capacity());
+        result
+    }
+
+    pub fn push(&mut self, transaction: Transaction) {
+        let cap = self.inner.capacity();
+        if self.inner.len() < cap {
+            self.inner.push(transaction);
+        } else {
+            let entry = self.inner.get_mut(self.write_idx % cap).unwrap();
+            *entry = transaction;
+        }
+        self.write_idx += 1;
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct Transaction {
+    pub market: AssetIdPair,
     pub price: Price,
     pub volume: Volume,
     pub taker_side: Side,
     pub maker: AccountId,
     pub taker: AccountId,
+    pub timestamp_ms: u64,
 }
 
 pub struct Exchange {
@@ -88,6 +125,7 @@ pub struct Exchange {
     markets: Markets,
     rx_command_buf: mpsc::Receiver<CommandBufferWithReplyChannel>,
     session_orders: Vec<(OrderId, PlacedOrder)>,
+    last_100_tx: RecentTransactions,
     transaction_buf: ObTransactionBuffer,
 }
 
@@ -127,6 +165,7 @@ impl Exchange {
                 markets: Markets::new(),
                 session_orders: Vec::with_capacity(10_000_000),
                 rx_command_buf,
+                last_100_tx: RecentTransactions::with_capacity(100),
                 transaction_buf: Vec::new(),
             },
             ExchangeHandle { tx_command_buf },
@@ -240,6 +279,7 @@ impl Exchange {
             Command::GetOrderbookL2(pair) => self.get_orderbook_l2(pair).into(),
             Command::GetAssets() => self.traded_assets.clone().into(),
             Command::GetAllOrderbookL1() => self.get_all_orderbook_l1().into(),
+            Command::GetLast100Transactions() => self.get_last_100_transactions().into(),
         };
         response_buf.push_back(result);
     }
@@ -293,7 +333,6 @@ impl Exchange {
                 taker_order.status = OrderExecutionStatus::Filled;
             }
 
-            // Update balances
             let maker_id = maker_order.account_id;
             let taker_id = taker_order.account_id;
 
@@ -335,6 +374,22 @@ impl Exchange {
                     *balance_secondary_maker += volume_secondary;
                 }
             }
+
+            // Add transaction to `last_100_tx`.
+            // Conversion safety: log_10(timestamp) ≈ 12, log_10(u64::MAX) ≈ 19.
+            let timestamp_ms = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64;
+            self.last_100_tx.push(Transaction {
+                market: pair,
+                price: transaction.price,
+                volume: transaction.volume,
+                taker_side: transaction.taker_side,
+                maker: maker_id,
+                taker: taker_id,
+                timestamp_ms,
+            });
         }
     }
 
@@ -456,5 +511,9 @@ impl Exchange {
             result.push((market.asset_pair, market.get_l1()));
         }
         result
+    }
+
+    fn get_last_100_transactions(&self) -> Vec<Transaction> {
+        self.last_100_tx.get()
     }
 }

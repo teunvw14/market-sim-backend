@@ -1,7 +1,8 @@
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use std::{net::SocketAddr, time::Duration};
 
 use backend::asset::AssetIdPair;
+use backend::exchange::Transaction;
 use backend::orderbook::OrderbookL1;
 use futures_util::sink::SinkExt;
 use hdrhistogram::sync::Recorder;
@@ -30,10 +31,11 @@ const TCP_BUFFER_SIZE: usize = MB / 2;
 /// The interval at which metrics are collected
 const METRICS_INTERVAL: Duration = Duration::from_secs(1);
 /// The interval at which the exchange state is sent to connected WebSockets
-const WS_SEND_INTERVAL: Duration = Duration::from_secs(1);
+const WS_SEND_INTERVAL: Duration = Duration::from_millis(100);
 
 #[derive(Default, Debug, Clone, Copy, Serialize)]
 struct ExchangeMetrics {
+    timestamp: u64,
     p50: u64,
     p90: u64,
     p999: u64,
@@ -43,6 +45,7 @@ struct ExchangeMetrics {
 struct ExchangeState {
     l1s: Vec<(AssetIdPair, OrderbookL1)>,
     metrics: ExchangeMetrics,
+    last_100_tx: Vec<Transaction>,
 }
 
 /// Collect metrics from HDRHistograms and publish them through a `watch`
@@ -53,9 +56,16 @@ fn collect_metrics(
     interval: Duration,
 ) {
     loop {
-        let refresh_timeout = Duration::from_millis(100);
+        let refresh_timeout = Duration::from_millis(500);
         sync_hist.refresh_timeout(refresh_timeout);
+
+        // Unwrap safety: UNIX_EPOCH will never be earlier than now.
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         let metrics = ExchangeMetrics {
+            timestamp,
             p50: sync_hist.value_at_quantile(0.5f64),
             p90: sync_hist.value_at_quantile(0.9f64),
             p999: sync_hist.value_at_quantile(0.999f64),
@@ -131,8 +141,13 @@ async fn handle_connection_ws(
     loop {
         let l1s = client.get_all_l1().await;
         let metrics = *rx_metrics.borrow();
+        let last_100_tx = client.get_last_100_transactions().await;
 
-        let exchange_state = ExchangeState { l1s, metrics };
+        let exchange_state = ExchangeState {
+            l1s,
+            metrics,
+            last_100_tx,
+        };
 
         if let Ok(bytes) = rmp_serde::to_vec(&exchange_state) {
             let message = Message::Binary(bytes.into());
