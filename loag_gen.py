@@ -312,16 +312,16 @@ def build_gui(params: Params, stats: Stats, stop_event: threading.Event,
         scale.set(getattr(params, attr))
         scale.grid(row=row, column=1, sticky="we", padx=(0, 8))
 
-    toggle = tk.Button(root, text="Pause", width=10)
+    toggle = tk.Button(root, text="Start", width=10)
     toggle.grid(row=len(SLIDERS), column=0, columnspan=2, pady=(6, 0))
 
     def on_toggle():
         if run_event.is_set():
             run_event.clear()
-            toggle.config(text="Resume")
+            toggle.config(text="Start")
         else:
             run_event.set()
-            toggle.config(text="Pause")
+            toggle.config(text="Stop")
 
     toggle.config(command=on_toggle)
 
@@ -356,7 +356,7 @@ def main():
     stats = Stats()
     stop_event = threading.Event()
     run_event = threading.Event()
-    run_event.set()
+    run_event.clear()
 
     thread = threading.Thread(target=sender_loop,
                               args=(params, stats, stop_event, run_event),
