@@ -134,6 +134,12 @@ impl Orderbook {
             }
             if index.is_some() {
                 orders.remove(index.unwrap());
+                
+                // Remove the whole price level if it's empty
+                if orders.len() == 0 {
+                    side.remove(&price);
+                }
+
                 return Ok(());
             }
         }
@@ -148,7 +154,6 @@ impl Orderbook {
         let price = modification.price;
 
         // Do a linear search over orders at the given price
-        let mut result = Err(OrderModificationError::OrderNotFound);
         if let Some(orders) = side.get_mut(&price) {
             let mut remove_index = None;
             for (i, order) in orders.iter_mut().enumerate() {
@@ -158,16 +163,20 @@ impl Orderbook {
                         remove_index = Some(i);
                     } else {
                         order.remaining_volume -= modification.volume_reduction;
+                        return Ok(());
                     };
-                    result = Ok(());
                     break;
                 }
             }
             if let Some(idx) = remove_index {
                 orders.remove(idx);
+                if orders.len() == 0 {
+                    side.remove(&price);
+                }
+                return Ok(());
             }
         }
-        result
+        Err(OrderModificationError::OrderNotFound)
     }
 
     pub fn insert_order(
