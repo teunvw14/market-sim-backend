@@ -3,7 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::errors::*;
 use crate::exchange_client::ExchangeClient;
@@ -246,7 +246,7 @@ impl Exchange {
                 .rx_command_buf
                 .blocking_recv_many(&mut channel_buf, MPSC_CAPACITY);
             if n == 0 {
-                println!("Order channel closed. Shutting down Exchange");
+                info!("Exchange command channel closed. Shutting down Exchange.");
                 break;
             }
 

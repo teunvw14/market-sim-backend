@@ -183,7 +183,7 @@ async fn main() {
 
     // Initialize Exchange
     let (exchange_handle, _pairs, _accounts) =
-        exchange_configs::exchange_5fx_markets_5_accs().await;
+        exchange_configs::exchange_5fx_markets_5_accs();
 
     // Bind TcpListener for client server and WebSocket server
     let bind_addr_client = "127.0.0.1:5555";

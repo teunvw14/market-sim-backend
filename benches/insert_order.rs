@@ -1,68 +1,52 @@
-use std::time::Duration;
+use backend::exchange_client::ExchangeClient;
+use backend::order::OrderInsertionRequest;
+use backend::order::OrderType;
+use backend::order::Side;
+use backend::util::types::Price;
+use criterion::Criterion;
+use criterion::{criterion_group, criterion_main};
 
-use backend::util::statics::ORDER_PRICES;
-use criterion::async_executor::FuturesExecutor;
-use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
+use tokio::runtime::Runtime;
 
-use backend::asset::*;
-use backend::exchange::*;
-use backend::order::*;
-use backend::util::types::*;
+use backend::util::exchange_configs::*;
 
-async fn actually_insert_order() {}
+// Here we have an async function to benchmark
+async fn insert_order(client: &ExchangeClient, request: OrderInsertionRequest) {
+    let _result = client.insert_order(request).await;
+}
 
-async fn insert_order(c: &mut Criterion) {
-    let (mut exchange, exchange_handle) = Exchange::new();
-
-    let eur_id = exchange.add_asset("Euro", "EUR");
-    let usd_id = exchange.add_asset("United States Dollar", "USD");
-    let pair = AssetIdPair {
-        primary: eur_id,
-        secondary: usd_id,
-    };
-    exchange.add_market(pair).unwrap();
-
-    // Create 2 accounts
-    for _ in 0..2 {
-        exchange.create_account();
-    }
-
-    let mut order_id: usize = 0;
-    let volume = 10;
+fn from_elem(c: &mut Criterion) {
+    let (exchange_handle, markets, accounts) = exchange_eur_usd_market_2_accs();
     let client = exchange_handle.get_client();
-    let tokio_runtime = tokio::runtime::Runtime::new().unwrap();
+    let mut order_id = 0;
 
-    // Single insertions to measure latency
-    c.bench_with_input(
-        BenchmarkId::new("single_insertion_latency", 1),
-        &client,
-        |b, &client| {
-            b.to_async(tokio_runtime).iter(async || {
-                order_id += 1;
-                let side = if order_id % 2 == 0 {
-                    Side::Bid
-                } else {
-                    Side::Ask
-                };
-                let account_id = 1;
-                (order_id % 2) as u32;
-                let price = Price::from(ORDER_PRICES[order_id % ORDER_PRICES.len()]);
-                (&client)
-                    .insert_order(account_id, OrderType::Limit, pair, side, volume, price)
-                    .await
-                    .unwrap();
+    let runtime = Runtime::new().unwrap();
+    c.bench_function("Insert Order", |b| {
+        let market = markets[0];
+        let price = Price::from(10);
+
+        // Insert a call to `to_async` to convert the bencher to async mode.
+        // The timing loops are the same as with the normal bencher.
+        b.to_async(&runtime).iter(|| {
+            let side = if order_id % 2 == 0 {
+                Side::Ask
+            } else {
+                Side::Bid
+            };
+            order_id += 1;
+            insert_order(
+                &client,
+            OrderInsertionRequest {
+                account_id: 0,
+                order_type: OrderType::Limit,
+                pair: market,
+                side,
+                volume: 10,
+                price,
             })
-        },
-    );
+        });
+    });
 }
 
-criterion_group! {
-    name = benches;
-    // This can be any expression that returns a `Criterion` object.
-    config = Criterion::default()
-        .sample_size(10_000)
-        .warm_up_time(Duration::from_millis(1));
-    targets = insert_order
-}
-
+criterion_group!(benches, from_elem);
 criterion_main!(benches);

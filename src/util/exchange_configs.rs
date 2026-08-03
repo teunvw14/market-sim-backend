@@ -3,7 +3,7 @@
 use crate::{asset::*, exchange::*, util::types::*};
 
 /// Create a simple exchange with a single EUR/USD market, no accounts.
-pub async fn exchange_eur_usd_market() -> (ExchangeHandle, Vec<AssetIdPair>, Vec<AccountId>) {
+pub fn exchange_eur_usd_market() -> (ExchangeHandle, Vec<AssetIdPair>, Vec<AccountId>) {
     let (mut exchange, exchange_handle) = Exchange::new();
     // Create two accounts
 
@@ -20,7 +20,7 @@ pub async fn exchange_eur_usd_market() -> (ExchangeHandle, Vec<AssetIdPair>, Vec
 }
 
 /// Create a simple exchange with a single EUR/USD market and two accounts.
-pub async fn exchange_eur_usd_market_2_accs() -> (ExchangeHandle, Vec<AssetIdPair>, Vec<AccountId>)
+pub fn exchange_eur_usd_market_2_accs() -> (ExchangeHandle, Vec<AssetIdPair>, Vec<AccountId>)
 {
     let (mut exchange, exchange_handle) = Exchange::new();
     // Create two accounts
@@ -46,7 +46,7 @@ pub async fn exchange_eur_usd_market_2_accs() -> (ExchangeHandle, Vec<AssetIdPai
 /// USD/CHF
 /// EUR/CHF
 /// EUR/JPY
-pub async fn exchange_5fx_markets_5_accs() -> (ExchangeHandle, Vec<AssetIdPair>, Vec<AccountId>) {
+pub fn exchange_5fx_markets_5_accs() -> (ExchangeHandle, Vec<AssetIdPair>, Vec<AccountId>) {
     let (mut exchange, exchange_handle) = Exchange::new();
     // Create two accounts
     let mut accounts = Vec::with_capacity(5);
