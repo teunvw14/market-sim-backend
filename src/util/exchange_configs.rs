@@ -20,8 +20,7 @@ pub fn exchange_eur_usd_market() -> (ExchangeHandle, Vec<AssetIdPair>, Vec<Accou
 }
 
 /// Create a simple exchange with a single EUR/USD market and two accounts.
-pub fn exchange_eur_usd_market_2_accs() -> (ExchangeHandle, Vec<AssetIdPair>, Vec<AccountId>)
-{
+pub fn exchange_eur_usd_market_2_accs() -> (ExchangeHandle, Vec<AssetIdPair>, Vec<AccountId>) {
     let (mut exchange, exchange_handle) = Exchange::new();
     // Create two accounts
     let id_1 = exchange.create_account();

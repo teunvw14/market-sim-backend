@@ -2,7 +2,7 @@ use std::cmp::min;
 use std::collections::{BTreeMap, VecDeque};
 
 use serde::{Deserialize, Serialize};
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::errors::*;
 use crate::order::OrderType;
@@ -134,7 +134,7 @@ impl Orderbook {
             }
             if index.is_some() {
                 orders.remove(index.unwrap());
-                
+
                 // Remove the whole price level if it's empty
                 if orders.len() == 0 {
                     side.remove(&price);
@@ -194,8 +194,8 @@ impl Orderbook {
         let mut remaining = order.volume;
         let mut last_traded_price = None;
 
-        // Define the side of `prices` for readability: the side of the prices
-        // we want to iterate over is the opposite of the order side.
+        // The side of the prices we want to iterate over (which is the opposite
+        // of the order's side). Defined for readability.
         let prices_side = match order.side {
             Side::Ask => Side::Bid, // if the order is an ask, iterate over bids
             Side::Bid => Side::Ask, // if the order is a bid, iterate over asks

@@ -6,13 +6,8 @@ use std::{
 use num_format::{CustomFormat, ToFormattedString};
 
 use backend::{
-    asset::*,
-    exchange::*,
-    exchange_client::ExchangeClient,
-    order::*,
-    util::{
-        statics::{MAX_CMD_BUF_SIZE, ORDER_PRICES, VOLUMES},
-        types::*,
+    asset::*, exchange::*, exchange_client::ExchangeClient, order::*, util::{
+        exchange_configs::exchange_5fx_markets_5_accs, statics::{MAX_CMD_BUF_SIZE, ORDER_PRICES, VOLUMES}, types::*,
     },
 };
 
@@ -62,55 +57,17 @@ async fn send_orders(
 #[tokio::main]
 async fn main() {
     // Bench params
-    let bench_duration = Duration::from_secs(1);
+    let bench_duration = Duration::from_secs(5);
 
-    // Init exchange
-    let (mut exchange, exchange_handle) = Exchange::new();
-
-    // Add assets and markets to exchange
-    let jpy_id = exchange.add_asset("Japanese Yen", "JPY");
-    let usd_id = exchange.add_asset("United States Dollar", "USD");
-    let eur_id = exchange.add_asset("Euro", "EUR");
-    let chf_id = exchange.add_asset("Swiss Frank", "CHF");
-    let cad_id = exchange.add_asset("Canadian Dollar", "CAD");
-    let gbp_id = exchange.add_asset("British Pound", "GBP");
-    let assets = vec![jpy_id, usd_id, eur_id, chf_id, cad_id, gbp_id];
-
-    // Create all possible pairs out of all listed assets
-    let mut pairs = Vec::new();
-    for asset1 in &assets {
-        for asset2 in &assets {
-            if asset1 != asset2 {
-                let pair = AssetIdPair {
-                    primary: *asset1,
-                    secondary: *asset2,
-                };
-                let pair_rev = AssetIdPair {
-                    primary: *asset2,
-                    secondary: *asset1,
-                };
-                if !(pairs.contains(&pair) || pairs.contains(&pair_rev)) {
-                    pairs.push(AssetIdPair {
-                        primary: *asset1,
-                        secondary: *asset2,
-                    });
-                }
-            }
-        }
-    }
-    dbg!(&pairs);
-    // Add pairs on exchange
-    for pair in &pairs {
-        exchange.add_market(*pair).unwrap();
-    }
+    let (exchange_handle, pairs, accounts) = exchange_5fx_markets_5_accs();
 
     // Create some accounts to send orders from
-    let concurrency = 2;
+    let concurrency = 5;
     let mut handles = Vec::new();
 
     // Launch `concurrency` Tokio tasks sending orders.
     for i in 0..concurrency {
-        let account_id = exchange.create_account();
+        let account_id = accounts[i];
         let client = exchange_handle.get_client();
         let pair_index = account_id as usize % pairs.len();
         let pair = pairs[pair_index];
@@ -123,8 +80,6 @@ async fn main() {
             tokio::task::spawn(send_orders(client, account_id, pair, bench_duration, side));
         handles.push(handle);
     }
-
-    exchange.run();
 
     let start = Instant::now();
     let mut total: usize = 0;

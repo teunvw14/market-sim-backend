@@ -1,4 +1,5 @@
 use std::collections::{HashMap, VecDeque};
+use std::mem::MaybeUninit;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -68,7 +69,7 @@ define_exchange_commands! {
 pub type CommandBuffer = VecDeque<Command>;
 
 /// A buffer of results from a CommandBuffer
-pub type CommandResultBuffer = VecDeque<CommandResult>;
+pub type CommandResultBuffer = Vec<CommandResult>;
 
 pub struct CommandBufferWithReplyChannel {
     pub command_buf: CommandBuffer,
@@ -253,23 +254,29 @@ impl Exchange {
             // Process command buffers
             // Use `drain` so that the order of `CommandBuffer`s is maintained
             for msg in channel_buf.drain(..) {
-                let mut response_buf = VecDeque::with_capacity(msg.command_buf.len());
-                for command in msg.command_buf {
-                    self.handle_command(command, &mut response_buf);
+                let len = msg.command_buf.len();
+                let mut response_buf = Vec::with_capacity(len);
+                let spare = response_buf.spare_capacity_mut();
+                for (i, command) in msg.command_buf.into_iter().enumerate() {
+                    let result = self.handle_command(command);
+                    spare[i] = MaybeUninit::new(result);
                 }
+                // SAFETY: we write `len` elements into `response_buf`
+                unsafe { response_buf.set_len(len); }
+                
                 // Send results. Ignore send failures
                 let _ = msg.tx_reply.send(response_buf);
             }
         }
     }
 
-    fn handle_command(&mut self, command: Command, response_buf: &mut CommandResultBuffer) {
+    fn handle_command(&mut self, command: Command) -> CommandResult {
         let result: CommandResult = match command {
             Command::OrderInsert(insertion_req) => self.insert_order(insertion_req).into(),
             Command::OrderCancel(cancellation) => self.cancel_order(cancellation).into(),
             Command::OrderModify(modification) => self.modify_order(modification).into(),
             Command::AddMarket(pair) => {
-                println!("Received new market {pair:?}");
+                info!("New market command received: {pair:?}");
                 self.add_market(pair).into()
             }
             Command::GetBalance(account_id, asset_id) => {
@@ -281,7 +288,7 @@ impl Exchange {
             Command::GetAllOrderbookL1() => self.get_all_orderbook_l1().into(),
             Command::GetLast100Transactions() => self.get_last_100_transactions().into(),
         };
-        response_buf.push_back(result);
+        result
     }
 
     fn insert_order(&mut self, insertion_req: OrderInsertionRequest) -> OrderInsertionResult {

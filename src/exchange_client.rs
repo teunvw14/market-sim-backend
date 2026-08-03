@@ -28,7 +28,7 @@ impl ExchangeClient {
         let command = Command::OrderInsert(order_insertion_req);
         let buf: CommandBuffer = vec![command].into();
         let mut result_buf = self.send_commands(buf).await;
-        match result_buf.pop_front() {
+        match result_buf.pop() {
             Some(CommandResult::OrderInsert(result)) => return result,
             _ => unreachable!(),
         }
@@ -38,7 +38,7 @@ impl ExchangeClient {
         let command = Command::GetAssets();
         let buf: CommandBuffer = vec![command].into();
         let mut result_buf = self.send_commands(buf).await;
-        match result_buf.pop_front() {
+        match result_buf.pop() {
             Some(CommandResult::GetAssets(result)) => return result,
             _ => unreachable!(),
         };
@@ -48,7 +48,7 @@ impl ExchangeClient {
         let command = Command::GetAllOrderbookL1();
         let buf: CommandBuffer = vec![command].into();
         let mut result_buf = self.send_commands(buf).await;
-        match result_buf.pop_front() {
+        match result_buf.pop() {
             Some(CommandResult::GetAllOrderbookL1(result)) => return result,
             _ => unreachable!(),
         };
@@ -58,7 +58,7 @@ impl ExchangeClient {
         let command = Command::GetLast100Transactions();
         let buf: CommandBuffer = vec![command].into();
         let mut result_buf = self.send_commands(buf).await;
-        match result_buf.pop_front() {
+        match result_buf.pop() {
             Some(CommandResult::GetLast100Transactions(result)) => return result,
             _ => unreachable!(),
         };
@@ -68,7 +68,7 @@ impl ExchangeClient {
         let command = Command::GetBalance(account_id, asset_id);
         let buf: CommandBuffer = vec![command].into();
         let mut result_buf = self.send_commands(buf).await;
-        if let Some(result) = result_buf.pop_front()
+        if let Some(result) = result_buf.pop()
             && let CommandResult::GetBalance(balance) = result
         {
             return balance;

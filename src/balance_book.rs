@@ -35,7 +35,7 @@ impl BalanceBook {
         &mut self,
         indexing_pairs: [(AssetId, AccountId); N],
     ) -> Result<[&mut Balance; N], GetDisjointMutError> {
-        let indices =
+        let indices: [usize; N] =
             indexing_pairs.map(|(asset_id, account_id)| self.get_index(asset_id, account_id));
         self.balances.get_disjoint_mut(indices)
     }
