@@ -201,6 +201,7 @@ async fn main() {
     // Clear terminal screen and reset cursor to (1, 1), then print start message
     print!("\x1B[2J\x1b[1;1H");
     info!("Exchange server started and listening at {bind_addr_client}.");
+    info!("Exchange server listening for WebSocket connections at {bind_addr_ws}.");
 
     // Run core loop, spawning a Tokio `Task` for each connection
     loop {
