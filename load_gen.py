@@ -350,6 +350,7 @@ def build_gui(params: Params, stats: Stats, stop_event: threading.Event,
     refresh()
     return root
 
+USE_GUI = True
 
 def main():
     params = Params()
@@ -363,11 +364,12 @@ def main():
                               daemon=True)
     thread.start()
 
-    root = build_gui(params, stats, stop_event, run_event)
-    try:
-        root.mainloop()
-    finally:
-        stop_event.set()
+    if USE_GUI:
+        root = build_gui(params, stats, stop_event, run_event)
+        try:
+            root.mainloop()
+        finally:
+            stop_event.set()
 
 
 if __name__ == "__main__":
