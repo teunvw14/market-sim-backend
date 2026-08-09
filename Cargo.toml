@@ -25,6 +25,7 @@ futures-util = "0.3.32"
 serde_repr = "0.1.20"
 tokio-tungstenite = "0.30.0"
 hdrhistogram = "7.6.0"
+figment = { version = "0.10.19", features = ["env", "json", "toml"] }
 
 [[bin]]
 name = "bench_insert_orders_manual"

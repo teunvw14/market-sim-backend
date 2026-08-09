@@ -4,10 +4,12 @@ use std::{net::SocketAddr, time::Duration};
 use backend::asset::AssetIdPair;
 use backend::exchange::Transaction;
 use backend::orderbook::OrderbookL1;
+use figment::Figment;
+use figment::providers::{Env, Format, Serialized, Toml};
 use futures_util::sink::SinkExt;
 use hdrhistogram::sync::Recorder;
 use hdrhistogram::{Histogram, SyncHistogram};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::select;
 use tokio::sync::watch;
@@ -23,15 +25,31 @@ use backend::{
     util::{exchange_configs, mp_command_codec::MpCommandCodec, statics::*},
 };
 
-// TODO: make below constants configurable
+#[derive(Deserialize, Serialize, Clone)]
+struct ExchangeServerConfig {
+    /// The buffer size for TCP connections.
+    tcp_buffer_size: usize,
+    /// The interval at which metrics are collected
+    metrics_interval_ms: u64,
+    /// The interval at which the exchange state is sent to connected WebSockets
+    ws_send_interval_ms: u64,
+    /// Address that the ExchangeServer's client server is exposed on
+    bind_address_client: String,
+    /// Address that the ExchangeServer's WebSocket server is exposed on
+    bind_address_websocket: String,
+}
 
-/// The buffer size for TCP connections. Connections < 100 makes this reasonable.
-const TCP_BUFFER_SIZE: usize = MB / 2;
-
-/// The interval at which metrics are collected
-const METRICS_INTERVAL: Duration = Duration::from_secs(1);
-/// The interval at which the exchange state is sent to connected WebSockets
-const WS_SEND_INTERVAL: Duration = Duration::from_millis(100);
+impl Default for ExchangeServerConfig {
+    fn default() -> ExchangeServerConfig {
+        ExchangeServerConfig {
+            tcp_buffer_size: MB / 2,
+            metrics_interval_ms: 1000,
+            ws_send_interval_ms: 500,
+            bind_address_client: "127.0.0.1:5555".to_string(),
+            bind_address_websocket: "127.0.0.1:5556".to_string(),
+        }
+    }
+}
 
 #[derive(Default, Debug, Clone, Copy, Serialize)]
 struct ExchangeMetrics {
@@ -174,6 +192,19 @@ fn get_tracing_subscriber() -> FmtSubscriber {
         .finish()
 }
 
+/// Config profile for debug builds
+#[cfg(debug_assertions)]
+fn get_config_profile() -> String {
+    "dev".to_string()
+}
+
+/// Config profile for non-debug builds
+#[cfg(not(debug_assertions))]
+fn get_config_profile() -> String {
+    "prod".to_string()
+}
+
+
 #[tokio::main]
 async fn main() {
     // Set up `tracing`
@@ -181,27 +212,37 @@ async fn main() {
     tracing::subscriber::set_global_default(subscriber)
         .expect("Tracing subscriber should be set successfully.");
 
+    // Load Exchange Server config. Overwrite configuration from Config.toml
+    // with configuration set through environment variables. First extract
+    // build-specific configuration from Config.toml
+    let config_build = Figment::from(Toml::file("Config.toml").nested())
+        .select(get_config_profile());
+    let config: ExchangeServerConfig = Figment::from(Serialized::defaults(ExchangeServerConfig::default()))
+        .merge(config_build)
+        .extract()
+        .unwrap();
+    let metrics_interval = Duration::from_millis(config.metrics_interval_ms);
+    let ws_send_interval = Duration::from_millis(config.ws_send_interval_ms);
+    println!("ws_send_interval: {ws_send_interval:?}");
+
     // Initialize Exchange
     let (exchange_handle, _pairs, _accounts) = exchange_configs::exchange_5fx_markets_5_accs();
 
     // Bind TcpListener for client server and WebSocket server
-    let bind_addr_client = "127.0.0.1:5555";
-    let listener_client = TcpListener::bind(bind_addr_client).await.unwrap();
-
-    let bind_addr_ws = "127.0.0.1:5556";
-    let listener_ws = TcpListener::bind(bind_addr_ws).await.unwrap();
+    let listener_client = TcpListener::bind(&config.bind_address_client).await.unwrap();
+    let listener_ws = TcpListener::bind(&config.bind_address_websocket).await.unwrap();
 
     // Enable metrics HDRHistogram
     let sync_hist =
         SyncHistogram::from(Histogram::<u64>::new_with_bounds(1, 1_000_000, 3).unwrap());
     let mut prime_recorder = sync_hist.recorder().into_idle();
     let (tx_metrics, rx_metrics) = watch::channel(ExchangeMetrics::default());
-    std::thread::spawn(|| collect_metrics(sync_hist, tx_metrics, METRICS_INTERVAL));
+    std::thread::spawn(move || collect_metrics(sync_hist, tx_metrics, metrics_interval));
 
     // Clear terminal screen and reset cursor to (1, 1), then print start message
     print!("\x1B[2J\x1b[1;1H");
-    info!("Exchange server started and listening at {bind_addr_client}.");
-    info!("Exchange server listening for WebSocket connections at {bind_addr_ws}.");
+    info!("Exchange server started and listening at {}.", &config.bind_address_client);
+    info!("Exchange server listening for WebSocket connections at {}.", &config.bind_address_websocket);
 
     // Run core loop, spawning a Tokio `Task` for each connection
     loop {
@@ -216,13 +257,13 @@ async fn main() {
                     addr,
                     exchange_client,
                     metrics_recorder,
-                    TCP_BUFFER_SIZE,
+                    config.tcp_buffer_size,
                 ));
             },
             Ok((stream, addr)) = listener_ws.accept() => {
                 if let Ok(stream_ws) = tokio_tungstenite::accept_async(stream).await {
                     let exchange_client = exchange_handle.get_client();
-                    tokio::task::spawn(handle_connection_ws(stream_ws, addr, exchange_client, rx_metrics.clone(), WS_SEND_INTERVAL));
+                    tokio::task::spawn(handle_connection_ws(stream_ws, addr, exchange_client, rx_metrics.clone(), ws_send_interval));
                 }
             }
         }

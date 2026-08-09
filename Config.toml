@@ -1,0 +1,5 @@
+[dev]
+ws_send_interval_ms = 100
+
+[prod]
+ws_send_interval_ms = 1000
