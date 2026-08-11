@@ -6,8 +6,14 @@ use std::{
 use num_format::{CustomFormat, ToFormattedString};
 
 use backend::{
-    asset::*, exchange::*, exchange_client::ExchangeClient, order::*, util::{
-        exchange_configs::exchange_5fx_markets_5_accs, statics::{MAX_CMD_BUF_SIZE, ORDER_PRICES, VOLUMES}, types::*,
+    asset::*,
+    exchange::*,
+    exchange_client::ExchangeClient,
+    order::*,
+    util::{
+        exchange_configs::exchange_5fx_markets_5_accs,
+        statics::{MAX_CMD_BUF_SIZE, ORDER_PRICES, VOLUMES},
+        types::*,
     },
 };
 

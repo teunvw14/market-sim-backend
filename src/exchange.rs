@@ -262,8 +262,10 @@ impl Exchange {
                     spare[i] = MaybeUninit::new(result);
                 }
                 // SAFETY: we write `len` elements into `response_buf`
-                unsafe { response_buf.set_len(len); }
-                
+                unsafe {
+                    response_buf.set_len(len);
+                }
+
                 // Send results. Ignore send failures
                 let _ = msg.tx_reply.send(response_buf);
             }

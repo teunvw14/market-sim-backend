@@ -204,7 +204,6 @@ fn get_config_profile() -> String {
     "prod".to_string()
 }
 
-
 #[tokio::main]
 async fn main() {
     // Set up `tracing`
@@ -215,12 +214,13 @@ async fn main() {
     // Load Exchange Server config. Overwrite configuration from Config.toml
     // with configuration set through environment variables. First extract
     // build-specific configuration from Config.toml
-    let config_build = Figment::from(Toml::file("Config.toml").nested())
-        .select(get_config_profile());
-    let config: ExchangeServerConfig = Figment::from(Serialized::defaults(ExchangeServerConfig::default()))
-        .merge(config_build)
-        .extract()
-        .unwrap();
+    let config_build =
+        Figment::from(Toml::file("Config.toml").nested()).select(get_config_profile());
+    let config: ExchangeServerConfig =
+        Figment::from(Serialized::defaults(ExchangeServerConfig::default()))
+            .merge(config_build)
+            .extract()
+            .unwrap();
     let metrics_interval = Duration::from_millis(config.metrics_interval_ms);
     let ws_send_interval = Duration::from_millis(config.ws_send_interval_ms);
     println!("ws_send_interval: {ws_send_interval:?}");
@@ -229,8 +229,12 @@ async fn main() {
     let (exchange_handle, _pairs, _accounts) = exchange_configs::exchange_5fx_markets_5_accs();
 
     // Bind TcpListener for client server and WebSocket server
-    let listener_client = TcpListener::bind(&config.bind_address_client).await.unwrap();
-    let listener_ws = TcpListener::bind(&config.bind_address_websocket).await.unwrap();
+    let listener_client = TcpListener::bind(&config.bind_address_client)
+        .await
+        .unwrap();
+    let listener_ws = TcpListener::bind(&config.bind_address_websocket)
+        .await
+        .unwrap();
 
     // Enable metrics HDRHistogram
     let sync_hist =
@@ -241,8 +245,14 @@ async fn main() {
 
     // Clear terminal screen and reset cursor to (1, 1), then print start message
     print!("\x1B[2J\x1b[1;1H");
-    info!("Exchange server started and listening at {}.", &config.bind_address_client);
-    info!("Exchange server listening for WebSocket connections at {}.", &config.bind_address_websocket);
+    info!(
+        "Exchange server started and listening at {}.",
+        &config.bind_address_client
+    );
+    info!(
+        "Exchange server listening for WebSocket connections at {}.",
+        &config.bind_address_websocket
+    );
 
     // Run core loop, spawning a Tokio `Task` for each connection
     loop {

@@ -1,18 +1,17 @@
 use std::collections::VecDeque;
 
+use backend::exchange::Command;
 use backend::exchange_client::ExchangeClient;
 use backend::order::OrderInsertionRequest;
 use backend::order::OrderType;
 use backend::order::Side;
 use backend::util::types::Price;
-use backend::exchange::{Command};
 use criterion::Criterion;
 use criterion::{criterion_group, criterion_main};
 
 use tokio::runtime::Runtime;
 
 use backend::util::exchange_configs::*;
-
 
 async fn insert_order(client: &ExchangeClient, request: OrderInsertionRequest) {
     let _result = client.insert_order(request).await;
@@ -23,7 +22,7 @@ async fn insert_order_bulk(client: &ExchangeClient, request: OrderInsertionReque
     let _result = client.send_commands(command_buf).await;
 }
 
-/// Benchmarks the latency of inserting 16 orders at once that should 
+/// Benchmarks the latency of inserting 16 orders at once that should
 /// either end up in an empty orderbook, or be immediately matched.
 fn bench_insert_order_bulk_16(c: &mut Criterion) {
     // Initialize exchange and variables
@@ -53,11 +52,7 @@ fn bench_insert_order_bulk_16(c: &mut Criterion) {
             } else {
                 Side::Bid
             };
-            let account_id = if order_id % 2 == 0 {
-                acc_0
-            } else {
-                acc_1
-            };
+            let account_id = if order_id % 2 == 0 { acc_0 } else { acc_1 };
             order_id += 1;
             insert_order_bulk(
                 &client,
@@ -77,7 +72,7 @@ fn bench_insert_order_bulk_16(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmarks the latency of inserting 256 orders at once that should 
+/// Benchmarks the latency of inserting 256 orders at once that should
 /// either end up in an empty orderbook, or be immediately matched.
 fn bench_insert_order_bulk_1024(c: &mut Criterion) {
     // Initialize exchange and variables
@@ -107,11 +102,7 @@ fn bench_insert_order_bulk_1024(c: &mut Criterion) {
             } else {
                 Side::Bid
             };
-            let account_id = if order_id % 2 == 0 {
-                acc_0
-            } else {
-                acc_1
-            };
+            let account_id = if order_id % 2 == 0 { acc_0 } else { acc_1 };
             order_id += 1;
             insert_order_bulk(
                 &client,
@@ -159,11 +150,7 @@ fn bench_insert_order_single(c: &mut Criterion) {
             } else {
                 Side::Bid
             };
-            let account_id = if order_id % 2 == 0 {
-                acc_0
-            } else {
-                acc_1
-            };
+            let account_id = if order_id % 2 == 0 { acc_0 } else { acc_1 };
             order_id += 1;
             insert_order(
                 &client,
@@ -182,7 +169,8 @@ fn bench_insert_order_single(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, 
+criterion_group!(
+    benches,
     bench_insert_order_single,
     bench_insert_order_bulk_16,
     bench_insert_order_bulk_1024,
