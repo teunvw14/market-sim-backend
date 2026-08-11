@@ -67,7 +67,7 @@ struct ExchangeState {
 }
 
 /// Collect metrics from HDRHistograms and publish them through a `watch`
-/// channel. Collects metrics over the given `interval`. 
+/// channel. Collects metrics over the given `interval`.
 fn collect_metrics(
     mut sync_hist: SyncHistogram<u64>,
     publisher: watch::Sender<ExchangeMetrics>,
