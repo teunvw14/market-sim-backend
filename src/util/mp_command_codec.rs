@@ -41,7 +41,7 @@ impl Decoder for MpCommandCodec {
 
     fn decode(
         &mut self,
-        src: &mut tokio_util::bytes::BytesMut,
+        src: &mut BytesMut,
     ) -> Result<Option<Self::Item>, Self::Error> {
         if src.len() < 2 {
             // Not enough data to read length marker.

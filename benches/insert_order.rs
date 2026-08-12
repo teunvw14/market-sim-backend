@@ -142,7 +142,7 @@ fn bench_insert_order_single(c: &mut Criterion) {
     let mut group = c.benchmark_group("Insert Order Group");
     group.sample_size(1000);
 
-    group.bench_function("Insert Order", |b| {
+    group.bench_function("Insert Order Single", |b| {
         b.to_async(&runtime).iter(|| {
             // Pick `side` and `account_id`
             let side = if order_id % 2 == 0 {
