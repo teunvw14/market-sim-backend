@@ -122,9 +122,9 @@ pub struct OrderCancellation {
 /// OrderModificationRequest is how a request to modify an order is received. Needs to be transformed into an OrderModification to be efficiently removed from an Orderbook.
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OrderModificationRequest {
-    pub order_id: OrderId,
     /// The account id is required for "authentication"
     pub account_id: AccountId,
+    pub order_id: OrderId,
     pub new_volume: Volume,
 }
 
