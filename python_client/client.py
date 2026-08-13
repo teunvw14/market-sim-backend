@@ -184,7 +184,7 @@ class ExchangeClient():
                 print("Connection to server broken. Trying to reconnect...")
                 self.connect_with_retry()
 
-    def send_commands(self, commands: list[Command]):
+    def send_commands(self, commands):
         if len(commands) > MAX_CMD_BUF_SIZE:
             raise ListTooLongError
 
