@@ -199,7 +199,6 @@ class ExchangeClient():
             raise EncodingError
 
         message = length_commands.to_bytes(2, "big") + encoded_commands_bytes
-        print(f"sending message:\n{message}")
 
         self.connection.sendall(message)
 

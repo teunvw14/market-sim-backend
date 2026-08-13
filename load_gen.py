@@ -260,7 +260,8 @@ def sender_loop(params: Params, stats: Stats, stop_event: threading.Event,
                     ask_turn = not ask_turn
                     stats.inserted += orders_per_send
 
-                recv_frame(sock)
+                response = recv_frame(sock)
+                print(f"Got response {response}")
 
                 interval = params.send_interval_seconds
                 if interval > 0:
@@ -373,4 +374,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    make_order_insert(0, 0, 1, 1, 1, [0, 0])
+    # main()
