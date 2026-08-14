@@ -5,11 +5,11 @@ import time
 
 import msgpack
 
-from command import OrderInsert, OrderModify, OrderCancel, GetBalance, GetOrderBookL1, GetOrderBookL2, GetAssets, GetAllOrderbookL1
+from python_client.command import OrderInsert, OrderModify, OrderCancel, GetBalance, GetOrderBookL1, GetOrderBookL2, GetAssets, GetAllOrderbookL1
 
 MAX_CMD_BUF_SIZE = 1024
 
-# Errorsx
+# Errors
 class ServerClientError(Exception):
     pass
 

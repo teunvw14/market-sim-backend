@@ -2,7 +2,7 @@ from enum import Enum
 from dataclasses import dataclass, is_dataclass
 from copy import deepcopy
 
-import exchange_types
+from python_client.exchange_types import AccountId, AssetId, AssetIdPair, OrderId, OrderType, Side, Volume, Price
 
 FRACTIONAL_BITS = 31  # I33F31 -> 31 fractional bits
 PRICE_SCALE = 2 ** FRACTIONAL_BITS
