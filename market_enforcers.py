@@ -6,11 +6,11 @@ from math import sqrt
 client = ExchangeClient("127.0.0.1")
 
 S_0 = 0.86
-a = 0.05
+a = 0.01
 b = S_0
 sigma = 0.03
 
-tps = 25
+tps = 250
 rest = 1 / tps
 
 t = time.time()
