@@ -1,4 +1,5 @@
-from python_client.client import ExchangeClient, OrderInsert, OrderType, Side, AssetIdPair
+from python_client.client import ExchangeClient, OrderInsert
+from python_client.exchange_types import Side, OrderType, AssetIdPair
 import time
 import random
 from math import sqrt 
