@@ -261,7 +261,7 @@ def sender_loop(params: Params, stats: Stats, stop_event: threading.Event,
                     stats.inserted += orders_per_send
 
                 response = recv_frame(sock)
-                print(f"Got response {response}")
+                # print(f"Got response {response}")
 
                 interval = params.send_interval_seconds
                 if interval > 0:

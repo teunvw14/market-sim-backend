@@ -67,9 +67,9 @@ class ExchangeClient():
         response_len_bytes = self.connection.recv(2)
         response_len = int.from_bytes(response_len_bytes, "big")
         response = self.connection.recv(response_len)
-        print(f"Got response: {response}")
+        # print(f"Got response: {response}")
         response_decoded = msgpack.unpackb(response)
-        print(f"Decoded: {response_decoded}")
+        # print(f"Decoded: {response_decoded}")
 
     def send_commands(self, commands):
         if len(commands) > MAX_CMD_BUF_SIZE:
