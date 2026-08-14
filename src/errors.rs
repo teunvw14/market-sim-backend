@@ -5,69 +5,69 @@ use thiserror::Error;
 #[repr(u8)]
 pub enum MarketCreationError {
     #[error("Market for the given pair already exists.")]
-    MarketAlreadyExists,
+    MarketAlreadyExists = 0,
     #[error("One of the specified assets is not traded on this exchange.")]
-    AssetNotTraded,
+    AssetNotTraded = 1,
     #[error("There are no market handlers to assign the market to.")]
-    NoMarketHandlers,
+    NoMarketHandlers = 2,
     #[error("Unknown error occurred creating a market.")]
-    Other,
+    Other = 3,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Error, Serialize_repr)]
 #[repr(u8)]
 pub enum OrderInsertionError {
     #[error("The specified market does not exist.")]
-    MarketDoesNotExist,
+    MarketDoesNotExist = 0,
     #[error("The provided order insertion parameters are illegal.")]
-    IllegalParameters,
+    IllegalParameters = 1,
     #[error("Fill-or-Kill order was killed due to a lack of liquidity.")]
-    OrderKilled,
+    OrderKilled = 2,
     #[error("Market order could not be filled due to a lack of liquidity.")]
-    InadequateVolume,
+    InadequateVolume = 3,
     #[error("The insertion would result in a self-trade")]
-    SelfTrade,
+    SelfTrade = 4,
     #[error("Other (should never occur)")]
-    Other,
+    Other = 5,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Error, Serialize_repr)]
 #[repr(u8)]
 pub enum OrderCancellationError {
     #[error("The specified order does not exist.")]
-    OrderDoesNotExist,
+    OrderDoesNotExist = 0,
     #[error("User was not the one who created the order.")]
-    Unauthorized,
+    Unauthorized = 1,
     #[error("The specified order was already filled")]
-    AlreadyFilled,
+    AlreadyFilled = 2,
     #[error("The specified order was already cancelled")]
-    AlreadyCancelled,
+    AlreadyCancelled = 3,
     #[error("Market that the Order is registered for (no longer) exists.")]
-    MarketDoesNotExist,
+    MarketDoesNotExist = 4,
     #[error("Order cannot be cancelled (because it is not a limit order)")]
-    NotCancellable,
+    NotCancellable = 5,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Error, Serialize_repr)]
 #[repr(u8)]
 pub enum OrderModificationError {
     #[error("The specified order does not exist.")]
-    OrderDoesNotExist,
+    OrderDoesNotExist = 0,
     #[error("The specified order does not exist.")]
-    AlreadyFilled,
+    AlreadyFilled = 1,
     #[error("User was not the one who created the order.")]
-    Unauthorized,
+    Unauthorized = 2,
     #[error("Market that the Order is registered for (no longer) exists.")]
-    MarketDoesNotExist,
+    MarketDoesNotExist = 3,
     #[error("Specified new volume is not lower than the original volume; needs to be lower.")]
-    VolumeNotLower,
+    VolumeNotLower = 4,
     #[error("Order could not be found in the Orderbook.")]
-    OrderNotFound,
+    OrderNotFound = 5,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Error, Serialize_repr)]
 #[repr(u8)]
 pub enum GetOrderbookError {
     #[error("Market that the orderbook was requested for (no longer) exists.")]
-    MarketDoesNotExist,
+    MarketDoesNotExist = 0,
 }

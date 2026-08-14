@@ -2,3 +2,4 @@
 Cargo.lock
 .DS_store
 profile.json.gz
+__pycache__/
