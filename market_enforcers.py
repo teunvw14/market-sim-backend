@@ -9,7 +9,7 @@ client = ExchangeClient("127.0.0.1")
 S_0 = 0.86
 a = 0.01
 b = S_0
-sigma = 0.03
+sigma = 3.0
 
 tps = 250
 rest = 1 / tps
@@ -20,7 +20,9 @@ S = S_0
 order_id = 0
 while True:
     new_t = time.time()
-    dt = new_t - t
+    dt_seconds = new_t - t
+    # 1 year = 256 trading days * 24 hours * 60 minutes * 60 seconds
+    dt = dt_seconds / (60 * 60 * 24 * 256)
 
     dWt = random.gauss(0, sqrt(dt))
     S = S + a * (b - S) * dt + sigma * sqrt(S) * dWt
