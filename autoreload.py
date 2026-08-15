@@ -15,9 +15,9 @@ from typing import List
 class Program():
     name: str
     run_command: List[str]
-    run_command_debug: List[str] | None
+    run_command_debug: List[str]
     dependent_paths: List[str]
-    process: subprocess.Popen | None = None
+    process = None
     time_last_changes = {}
 
     def run(self, debug):
