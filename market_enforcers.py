@@ -31,11 +31,11 @@ class CIRProcess():
         self.value = abs(self.value + self.a * (self.b - self.value) * dt + self.sigma * sqrt(self.value) * dWt)
 
 # parameters
-cir_eur_usd = CIRProcess(1.12, 0.01, 0.85, 1.0)
-cir_jpy_usd = CIRProcess(0.006, 0.01, 0.85, 1.0)
-cir_chf_usd = CIRProcess(1.23, 0.01, 0.85, 1.0)
-cir_chf_eur = CIRProcess(1.06, 0.01, 0.85, 1.0)
-cir_jpy_eur = CIRProcess(0.005, 0.01, 0.85, 1.0)
+cir_eur_usd = CIRProcess(1.12, 0.01, 1.12, 1.0)
+# cir_jpy_usd = CIRProcess(0.006, 0.01, 0.85, 1.0)
+# cir_chf_usd = CIRProcess(1.23, 0.01, 0.85, 1.0)
+# cir_chf_eur = CIRProcess(1.06, 0.01, 0.85, 1.0)
+# cir_jpy_eur = CIRProcess(0.005, 0.01, 0.85, 1.0)
 
 tps = 25
 volume_mean = 100
