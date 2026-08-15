@@ -11,7 +11,7 @@ S_0 = 0.85
 a = 0.01
 b = S_0
 sigma = 10.0
-tps = 250
+tps = 25
 volume_mean = 100
 
 
