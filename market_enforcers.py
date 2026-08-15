@@ -30,7 +30,11 @@ class CIRProcess():
         self.value = self.value + self.a * (self.b - self.value) * dt + self.sigma * sqrt(self.value) * dWt
 
 # parameters
-cir_usd_eur = CIRProcess(0.85, 0.01, 0.85, 2.0)
+cir_eur_usd = CIRProcess(1.12, 0.01, 0.85, 1.0)
+cir_jpy_usd = CIRProcess(0.006, 0.01, 0.85, 1.0)
+cir_chf_usd = CIRProcess(1.23, 0.01, 0.85, 1.0)
+cir_chf_eur = CIRProcess(1.06, 0.01, 0.85, 1.0)
+cir_jpy_eur = CIRProcess(0.005, 0.01, 0.85, 1.0)
 
 tps = 25
 volume_mean = 100
@@ -45,7 +49,7 @@ while True:
     dt_seconds = new_t - start
     # 1 year = 256 trading days * 24 hours * 60 minutes * 60 seconds
     dt = dt_seconds / (60 * 60 * 24 * 256)
-    cir_usd_eur.update(dt)
+    cir_eur_usd.update(dt)
 
     side = Side.Bid
     if order_id % 2 == 0:
@@ -56,7 +60,7 @@ while True:
         AssetIdPair(1, 0),
         side,
         int(random.expovariate(1/volume_mean)),
-        cir_usd_eur.value
+        cir_eur_usd.value
     )
 
     client.send_commands([cmd])
