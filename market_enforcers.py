@@ -53,7 +53,7 @@ while True:
     cmd = OrderInsert(
         order_id % 2,
         OrderType.Limit,
-        AssetIdPair(0, 1),
+        AssetIdPair(1, 0),
         side,
         int(random.expovariate(1/volume_mean)),
         cir_usd_eur.value
