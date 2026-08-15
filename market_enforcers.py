@@ -10,6 +10,7 @@ client = ExchangeClient("127.0.0.1")
 
 @dataclass
 class CIRProcess():
+    '''Reflecting CIR process.'''
     # Internal value
     value: float
     #Parameters
@@ -27,7 +28,7 @@ class CIRProcess():
 
     def update(self, dt):
         dWt = random.gauss(0, sqrt(dt))
-        self.value = self.value + self.a * (self.b - self.value) * dt + self.sigma * sqrt(self.value) * dWt
+        self.value = abs(self.value + self.a * (self.b - self.value) * dt + self.sigma * sqrt(self.value) * dWt)
 
 # parameters
 cir_eur_usd = CIRProcess(1.12, 0.01, 0.85, 1.0)
