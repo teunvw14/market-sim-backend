@@ -62,24 +62,24 @@ pub fn exchange_5fx_markets_5_accs() -> (ExchangeHandle, Vec<AssetIdPair>, Vec<A
     // Create all possible pairs out of all listed assets
     let pairs: Vec<AssetIdPair> = vec![
         AssetIdPair {
-            primary: usd_id,
+            primary: eur_id,
+            secondary: usd_id,
+        },
+        AssetIdPair {
+            primary: jpy_id,
+            secondary: usd_id,
+        },
+        AssetIdPair {
+            primary: chf_id,
+            secondary: usd_id,
+        },
+        AssetIdPair {
+            primary: chf_id,
             secondary: eur_id,
         },
         AssetIdPair {
-            primary: usd_id,
-            secondary: jpy_id,
-        },
-        AssetIdPair {
-            primary: usd_id,
-            secondary: chf_id,
-        },
-        AssetIdPair {
-            primary: eur_id,
-            secondary: chf_id,
-        },
-        AssetIdPair {
-            primary: eur_id,
-            secondary: jpy_id,
+            primary: jpy_id,
+            secondary: eur_id,
         },
     ];
 
