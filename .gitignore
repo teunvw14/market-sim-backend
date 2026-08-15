@@ -2,4 +2,4 @@
 Cargo.lock
 .DS_store
 profile.json.gz
-__pycache__/*
+__pycache__/

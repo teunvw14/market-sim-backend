@@ -72,26 +72,26 @@ class ExchangeClient():
         # print(f"Decoded: {response_decoded}")
 
     def send_commands(self, commands):
-        if len(commands) > MAX_CMD_BUF_SIZE:
-            raise ListTooLongError
+        while True:
+            try:
+                if len(commands) > MAX_CMD_BUF_SIZE:
+                    raise ListTooLongError
 
-        # Encode the commands
-        encoded_commands = [cmd.encode() for cmd in commands]
-        encoded_commands_bytes: bytes = msgpack.packb(encoded_commands)
+                # Encode the commands
+                encoded_commands = [cmd.encode() for cmd in commands]
+                encoded_commands_bytes: bytes = msgpack.packb(encoded_commands)
 
-        # Messages are framed by starting each message with two bytes denoting 
-        # the length of the coming frame
-        length_commands = len(encoded_commands_bytes)
-        if length_commands > 0xFFFF:
-            raise EncodingError
+                # Messages are framed by starting each message with two bytes denoting 
+                # the length of the coming frame
+                length_commands = len(encoded_commands_bytes)
+                if length_commands > 0xFFFF:
+                    raise EncodingError
 
-        message = length_commands.to_bytes(2, "big") + encoded_commands_bytes
+                message = length_commands.to_bytes(2, "big") + encoded_commands_bytes
 
-        self.connection.sendall(message)
-        self.recv_frame()
-
-client = ExchangeClient("127.0.0.1")
-
-client.send_commands([
-    GetAllOrderbookL1()
-])
+                self.connection.sendall(message)
+                self.recv_frame()
+                return
+            except (ConnectionRefusedError, ConnectionResetError, socket.timeout, OSError) as e:
+                time.sleep(1)
+                self.reconnect()

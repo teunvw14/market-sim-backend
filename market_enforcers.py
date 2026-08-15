@@ -6,18 +6,20 @@ from math import sqrt
 
 client = ExchangeClient("127.0.0.1")
 
-S_0 = 0.86
+# parameters
+S_0 = 0.85
 a = 0.01
 b = S_0
-sigma = 3.0
-
+sigma = 10.0
 tps = 250
+volume_mean = 100
+
+
 rest = 1 / tps
-
 t = time.time()
-
 S = S_0
 order_id = 0
+
 while True:
     new_t = time.time()
     dt_seconds = new_t - t
@@ -35,7 +37,7 @@ while True:
         OrderType.Limit,
         AssetIdPair(0, 1),
         side,
-        10,
+        int(random.expovariate(1/volume_mean)),
         S
     )
 
