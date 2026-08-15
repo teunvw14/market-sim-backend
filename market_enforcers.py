@@ -30,7 +30,7 @@ class CIRProcess():
         self.value = self.value + self.a * (self.b - self.value) * dt + self.sigma * sqrt(self.value) * dWt
 
 # parameters
-cir_usd_eur = CIRProcess(0.85, 0.01, 0.85, 1.0)
+cir_usd_eur = CIRProcess(0.85, 0.01, 0.85, 2.0)
 
 tps = 25
 volume_mean = 100
