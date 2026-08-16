@@ -47,7 +47,7 @@ order_id = 0
 
 while True:
     new_time = time.time()
-    dt_seconds = t - new_time
+    dt_seconds = new_time - t
     t = new_time
     # 1 year = 256 trading days * 24 hours * 60 minutes * 60 seconds
     dt = dt_seconds / (60 * 60 * 24 * 256)
