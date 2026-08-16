@@ -67,6 +67,5 @@ while True:
 
     client.send_commands([cmd])
 
-    t = new_t
     order_id += 1
     time.sleep(rest)
