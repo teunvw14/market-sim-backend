@@ -42,7 +42,7 @@ volume_mean = 100
 
 
 rest = 1 / tps
-start = time.time()
+t = time.time()
 order_id = 0
 
 while True:
