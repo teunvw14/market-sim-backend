@@ -184,7 +184,6 @@ COMMAND_RESULT_TYPES = {
 }
 
 def decode_commands(obj):
-    print(f'decoding object {obj}')
     if obj is None:
         return None
     for k, t in COMMAND_RESULT_TYPES.items():
