@@ -81,8 +81,8 @@ pub struct OrderbookL2 {
     pub bids: Vec<PriceLevelAggregate>,
 }
 
-pub type GetOrderBookL1Result = Result<OrderbookL1, GetOrderbookError>;
-pub type GetOrderBookL2Result = Result<OrderbookL2, GetOrderbookError>;
+pub type GetOrderbookL1Result = Result<OrderbookL1, GetOrderbookError>;
+pub type GetOrderbookL2Result = Result<OrderbookL2, GetOrderbookError>;
 
 #[derive(Debug, Clone, Default)]
 /// The core Orderbook struct that keeps track of all open orders.
@@ -99,7 +99,7 @@ impl Orderbook {
         }
     }
 
-    /// Insert an order into the OrderBook without matching (i.e. without generating transactions)
+    /// Insert an order into the Orderbook without matching (i.e. without generating transactions)
     pub fn insert_limit_order_no_matching(&mut self, order: OrderInsertion) {
         let price = order.price;
         let side = order.side;

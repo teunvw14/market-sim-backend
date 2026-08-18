@@ -58,8 +58,8 @@ define_exchange_commands! {
     OrderModify(OrderModificationRequest), OrderModificationResult;
     AddMarket(AssetIdPair), MarketCreationResult;
     GetBalance(AccountId, AssetId), Option<Balance>;
-    GetOrderbookL1(AssetIdPair), GetOrderBookL1Result;
-    GetOrderbookL2(AssetIdPair), GetOrderBookL2Result;
+    GetOrderbookL1(AssetIdPair), GetOrderbookL1Result;
+    GetOrderbookL2(AssetIdPair), GetOrderbookL2Result;
     GetAssets(), Vec<Asset>;
     GetAllOrderbookL1(), Vec<(AssetIdPair, OrderbookL1)>;
     GetLast100Transactions(), Vec<Transaction>;
@@ -498,7 +498,7 @@ impl Exchange {
         result
     }
 
-    fn get_orderbook_l1(&self, pair: AssetIdPair) -> GetOrderBookL1Result {
+    fn get_orderbook_l1(&self, pair: AssetIdPair) -> GetOrderbookL1Result {
         let market = self
             .markets
             .get(&pair)
@@ -506,7 +506,7 @@ impl Exchange {
         Ok(market.get_l1())
     }
 
-    fn get_orderbook_l2(&self, pair: AssetIdPair) -> GetOrderBookL2Result {
+    fn get_orderbook_l2(&self, pair: AssetIdPair) -> GetOrderbookL2Result {
         let market = self
             .markets
             .get(&pair)

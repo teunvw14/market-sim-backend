@@ -24,11 +24,11 @@ pub struct OrderInsertionEffects {
 #[repr(u8)]
 pub enum OrderExecutionStatus {
     #[default]
-    AwaitingFill,
-    PartialFill,
-    Filled,
-    Killed,
-    Cancelled,
+    AwaitingFill = 0,
+    PartialFill = 1,
+    Filled = 2,
+    Killed = 3,
+    Cancelled = 4,
 }
 
 pub type OrderInsertionResult = Result<OrderInsertionEffects, OrderInsertionError>;
