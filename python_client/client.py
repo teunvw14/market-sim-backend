@@ -4,8 +4,9 @@ import socket
 import time
 
 import msgpack
+from dataclasses import dataclass
 
-from python_client.command import OrderInsert, OrderModify, OrderCancel, GetBalance, GetOrderBookL1, GetOrderBookL2, GetAssets, GetAllOrderbookL1
+from python_client.command import OrderInsert, OrderModify, OrderCancel, GetBalance, GetOrderbookL1, GetOrderbookL2, GetAssets, GetAllOrderbookL1, decode_commands
 
 MAX_CMD_BUF_SIZE = 1024
 
@@ -67,11 +68,22 @@ class ExchangeClient():
         response_len_bytes = self.connection.recv(2)
         response_len = int.from_bytes(response_len_bytes, "big")
         response = self.connection.recv(response_len)
-        # print(f"Got response: {response}")
-        response_decoded = msgpack.unpackb(response)
-        # print(f"Decoded: {response_decoded}")
+        response_decoded = msgpack.unpackb(response, object_hook=decode_commands)
+        return response_decoded
+
+    def send_command(self, command):
+        ''''
+        Wrapper around `send_commands` to send a single command.
+        '''
+        response = self.send_commands([command])
+        if len(response) > 0:
+            return response[0]
+        return None
 
     def send_commands(self, commands):
+        ''''
+        Send a list of commands to the exchange, returning the parsed results.
+        '''
         while True:
             try:
                 if len(commands) > MAX_CMD_BUF_SIZE:
@@ -90,8 +102,8 @@ class ExchangeClient():
                 message = length_commands.to_bytes(2, "big") + encoded_commands_bytes
 
                 self.connection.sendall(message)
-                self.recv_frame()
-                return
+                response = self.recv_frame()
+                return response
             except (ConnectionRefusedError, ConnectionResetError, socket.timeout, OSError) as e:
                 time.sleep(1)
                 self.reconnect()

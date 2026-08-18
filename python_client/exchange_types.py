@@ -2,6 +2,28 @@ from dataclasses import dataclass
 from enum import Enum
 
 # Types
+
+# Wrapper Types
+
+@dataclass(frozen=True, slots=True)
+class Ok[T]:
+    value: T
+
+@dataclass(frozen=True, slots=True)
+class Err[E]:
+    value: E
+
+type Result[T, E] = Ok[T] | Err[E]
+
+def is_err(obj):
+    return isinstance(obj, Err)
+
+def is_ok(obj):
+    return isinstance(obj, Ok)
+
+
+# Other Types
+
 class OrderType(Enum):
     Limit = 0
     FillOrKill = 1
@@ -14,7 +36,7 @@ class Side(Enum):
 AssetId = int
 AccountId = int
 Volume = int
-Price = int
+Price = float
 OrderId = int
 
 @dataclass
@@ -32,3 +54,10 @@ class AssetPair():
 class AssetIdPair:
     primary: AssetId
     secondary: AssetId
+
+class OrderExecutionStatus(Enum):
+    AwaitingFill = 0
+    PartialFill = 1
+    Filled = 2
+    Killed = 3
+    Cancelled = 4
