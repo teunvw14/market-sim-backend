@@ -302,6 +302,10 @@ impl Exchange {
             .get_mut(&insertion_req.pair)
             .ok_or(OrderInsertionError::MarketDoesNotExist)?;
 
+        if insertion_req.account_id as usize >= self.accounts.len() {
+            return Err(OrderInsertionError::AccountDoesNotExist);
+        }
+
         // Insert order
         let new_id = self.session_orders.len();
         let insertion = insertion_req.into_insertion(new_id);

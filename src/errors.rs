@@ -19,16 +19,18 @@ pub enum MarketCreationError {
 pub enum OrderInsertionError {
     #[error("The specified market does not exist.")]
     MarketDoesNotExist = 0,
+    #[error("The specified account does not exist.")]
+    AccountDoesNotExist = 1,
     #[error("The provided order insertion parameters are illegal.")]
-    IllegalParameters = 1,
+    IllegalParameters = 2,
     #[error("Fill-or-Kill order was killed due to a lack of liquidity.")]
-    OrderKilled = 2,
+    OrderKilled = 3,
     #[error("Market order could not be filled due to a lack of liquidity.")]
-    InadequateVolume = 3,
+    InadequateVolume = 4,
     #[error("The insertion would result in a self-trade")]
-    SelfTrade = 4,
+    SelfTrade = 5,
     #[error("Other (should never occur)")]
-    Other = 5,
+    Other = 6,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Error, Serialize_repr)]
