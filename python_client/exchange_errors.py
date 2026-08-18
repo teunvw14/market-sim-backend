@@ -13,16 +13,18 @@ class MarketCreationError(Enum):
 class OrderInsertionError(Enum):
     # The specified market does not exist.
     MarketDoesNotExist = 0
+    # The specified account does not exist.
+    AccountDoesNotExist = 1
     # The provided order insertion parameters are illegal.
-    IllegalParameters = 1
+    IllegalParameters = 2
     # Fill-or-Kill order was killed due to a lack of liquidity.
-    OrderKilled = 2
+    OrderKilled = 3
     # Market order could not be filled due to a lack of liquidity.
-    InadequateVolume = 3
+    InadequateVolume = 4
     # The insertion would result in a self-trade
-    SelfTrade = 4
+    SelfTrade = 5
     # Other (should never occur)
-    Other = 5
+    Other = 6
 
 class OrderCancellationError(Enum):
     # The specified order does not exist.
