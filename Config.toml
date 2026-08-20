@@ -7,28 +7,28 @@ starting_assets = [
     ["Euro", "EUR"],
     ["Japanese Yen", "JPY"],
     ["Swiss Frank", "CHF"],
-    ["SK Hynix Inc.", "SKHY"],
-    ["Adyen N.V.", "ADYEN.AS"],
-    ["NVIDIA Corporation", "NVDA"],
-    ["ASML Holding N.V.", "ASML"],
-    ["Advanced Micro Devices, Inc.", "AMD"]
+    ["SK Hynix Inc.", "SKHY"], # 4
+    ["Adyen N.V.", "ADYEN.AS"], # 5
+    ["NVIDIA Corporation", "NVDA"], # 6
+    ["ASML Holding N.V.", "ASML"], # 7
+    ["Advanced Micro Devices, Inc.", "AMD"] # 8
 ]
 
 starting_markets = [
+    ["AMD", "USD"],
+    ["NVDA", "USD"],
+    ["ASML", "EUR"],
+    ["SKHY", "USD"],
+    ["ADYEN.AS", "EUR"],
     ["EUR", "USD"],
     ["JPY", "USD"],
     ["CHF", "USD"],
     ["CHF", "EUR"],
     ["JPY", "EUR"],
-    ["NVDA", "USD"], # 5
-    ["ASML", "EUR"], # 6
-    ["SKHY", "USD"], # 7
-    ["ADYEN.AS", "EUR"], # 8
-    ["AMD", "USD"], # 9
 ]
 
 [dev]
 ws_send_interval_ms = 100
 
 [prod]
-ws_send_interval_ms = 1000
+ws_send_interval_ms = 250
