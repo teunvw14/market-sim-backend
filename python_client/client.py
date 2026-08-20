@@ -1,5 +1,5 @@
 import sys
-
+import logging
 import socket
 import time
 
@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from python_client.command import OrderInsert, OrderModify, OrderCancel, GetBalance, GetOrderbookL1, GetOrderbookL2, GetAssets, GetAllOrderbookL1, decode_commands
 
 MAX_CMD_BUF_SIZE = 1024
+logging.basicConfig(format='%(asctime)s %(levelname)s %(filename)s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+logger = logging.getLogger(__name__)
 
 # Errors
 class ServerClientError(Exception):
@@ -23,7 +25,7 @@ class EncodingError(ServerClientError):
 
 def socket_is_open(sock: socket.socket):
     try:
-        data = sock.recv(1, socket.MSG_PEEK | socket.MSG_DONTWAIT)
+        data = sock.recv(1, socket.MSG_PEEK)
         if len(data) == 0:
             return False
     except BlockingIOError:
@@ -40,27 +42,25 @@ class ExchangeClient():
         self.exchange_port = exchange_port
         self.autoconnect = autoconnect
         self.connection = None
-        self.connect_with_retry()
+        self._connect_with_retry()
 
-    def connect_with_retry(self):
-        if self.connection is not None:
-            return
+    def _connect_with_retry(self):
         while True:
             try:
                 self.connection = socket.create_connection((self.exchange_addr, self.exchange_port), 5)
-                print(f"Connected to {self.exchange_addr}:{self.exchange_port}.")
+                logger.info(f"Connected to {self.exchange_addr}:{self.exchange_port}.")
                 return
             except (ConnectionRefusedError, socket.timeout, OSError) as e:
-                print(f"Unable to connect to exchange server due to error: {e}. Retrying in 1 second.", file=sys.stderr)
+                logger.info(f"Unable to connect to exchange server due to error: {e}. Retrying in 1 second.", file=sys.stderr)
                 time.sleep(1)
 
-    def reconnect(self):
-        if self.connection is not None and self.autoconnect:
+    def _reconnect(self):
+        if self.autoconnect:
             if not socket_is_open(self.connection):
-                print("Connection to server broken. Trying to reconnect...")
-                self.connect_with_retry()
+                logger.warning("Connection to server broken. Trying to reconnect...")
+                self._connect_with_retry()
 
-    def recv_frame(self):
+    def _recv_frame(self):
         '''
         Receive a frame and decode to a list of `CommandResult`s. Used for 
         reading responses.
@@ -102,8 +102,9 @@ class ExchangeClient():
                 message = length_commands.to_bytes(2, "big") + encoded_commands_bytes
 
                 self.connection.sendall(message)
-                response = self.recv_frame()
+                response = self._recv_frame()
                 return response
             except (ConnectionRefusedError, ConnectionResetError, socket.timeout, OSError) as e:
-                time.sleep(1)
-                self.reconnect()
+                logger.error(f"Could not send command due to error: {e}.")
+                time.sleep(5)
+                self._reconnect()
