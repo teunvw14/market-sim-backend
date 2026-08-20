@@ -52,7 +52,7 @@ class GBMProcess():
 
     def update(self, dt):
         dWt = random.gauss(0, sqrt(dt))
-        self.value = self.value + self.value * (self.mu * dt + self.sigma**2 * dWt)
+        self.value = self.value * (1 + self.mu * dt + self.sigma * dWt)
 
 @dataclass
 class MarketEnforcer():
