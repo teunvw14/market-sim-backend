@@ -71,23 +71,23 @@ class MarketEnforcer():
 ENFORCERS = [
     MarketEnforcer( # EUR/USD
         AssetIdPair(1, 0),
-        CIRProcess(1.12, 0.1, 1.12, 10.0),
+        CIRProcess(1.12, 1.0, 1.12, 10.0),
     ),
     MarketEnforcer( # JPY/USD
         AssetIdPair(2, 0),
-        CIRProcess(0.0063, 0.1, 0.0063, 20.0),
+        CIRProcess(0.0063, 1.0, 0.0063, 5.0),
     ),
     MarketEnforcer( # CHF/USD
         AssetIdPair(3, 0),
-        CIRProcess(1.23, 0.1, 1.23, 10.0),
+        CIRProcess(1.23, 1.0, 1.23, 10.0),
     ),
     MarketEnforcer( # JPY/EUR
         AssetIdPair(2, 1),
-        CIRProcess(0.0054, 0.1, 0.0054, 20.0),
+        CIRProcess(0.0054, 1.0, 0.0054, 5.0),
     ),
     MarketEnforcer( # CHF/EUR
         AssetIdPair(3, 1),
-        CIRProcess(1.06, 0.1, 1.06, 5.0),
+        CIRProcess(1.06, 1.0, 1.06, 5.0),
     ),
 ]
 
