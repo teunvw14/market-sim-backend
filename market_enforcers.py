@@ -7,7 +7,7 @@ from python_client.client import ExchangeClient, OrderInsert
 from python_client.exchange_types import Side, OrderType, AssetIdPair
 
 
-TPS = 25
+TPS = 50
 REST = 1 / TPS
 VOLUME_MEAN = 100
 
