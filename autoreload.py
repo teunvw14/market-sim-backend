@@ -39,7 +39,7 @@ PROGRAMS = [
         "Exchange Server",
         ["cargo","run", "--release"],
         ["cargo", "run"],
-        list(Path("./src/").rglob("*.rs")),
+        list(Path("./src/").rglob("*.rs")) + [Path("./Config.toml")],
     ),
     Program(
         "Market Enforcers Script",

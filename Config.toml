@@ -1,3 +1,32 @@
+# This is the configuration file for the exchange server.
+
+[global]
+starting_accounts = 10
+starting_assets = [
+    ["United States Dollar", "UsD"],
+    ["Euro", "EUR"],
+    ["Japanese Yen", "JPY"],
+    ["Swiss Frank", "CHF"],
+    ["SK Hynix Inc.", "SKHY"],
+    ["Adyen N.V.", "ADYEN.AS"],
+    ["NVIDIA Corporation", "NVDA"],
+    ["ASML Holding N.V.", "ASML"],
+    ["Advanced Micro Devices, Inc.", "AMD"]
+]
+
+starting_markets = [
+    ["EUR", "USD"],
+    ["JPY", "USD"],
+    ["CHF", "USD"],
+    ["CHF", "EUR"],
+    ["JPY", "EUR"],
+    ["NVDA", "USD"], # 5
+    ["ASML", "EUR"], # 6
+    ["SKHY", "USD"], # 7
+    ["ADYEN.AS", "EUR"], # 8
+    ["AMD", "USD"], # 9
+]
+
 [dev]
 ws_send_interval_ms = 100
 

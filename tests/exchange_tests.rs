@@ -9,7 +9,7 @@ use backend::{
 /// consume both. Check that balances reflect expected amounts.
 #[tokio::test]
 async fn buy_sell_limit() {
-    let (exchange_handle, mut pairs, mut accounts) = exchange_eur_usd_market_2_accs();
+    let (exchange_handle, mut pairs, mut accounts) = market_eur_usd_accs_2();
 
     let acc_id_1 = accounts.pop().unwrap();
     let acc_id_2 = accounts.pop().unwrap();
@@ -77,7 +77,7 @@ async fn buy_sell_limit() {
 /// consume both. Check that balances reflect expected amounts.
 #[tokio::test]
 async fn buy_sell_market() {
-    let (exchange_handle, mut pairs, mut accounts) = exchange_eur_usd_market_2_accs();
+    let (exchange_handle, mut pairs, mut accounts) = market_eur_usd_accs_2();
 
     let acc_id_1 = accounts.pop().unwrap();
     let acc_id_2 = accounts.pop().unwrap();
@@ -143,7 +143,7 @@ async fn buy_sell_market() {
 /// Place and cancel single order, check that a cancelled order cannot be traded with.
 #[tokio::test]
 async fn cancel_order() {
-    let (exchange_handle, mut pairs, mut accounts) = exchange_eur_usd_market_2_accs();
+    let (exchange_handle, mut pairs, mut accounts) = market_eur_usd_accs_2();
 
     let acc_id_1 = accounts.pop().unwrap();
     let acc_id_2 = accounts.pop().unwrap();
@@ -201,7 +201,7 @@ async fn cancel_order() {
 
 #[tokio::test]
 async fn modify_order() {
-    let (exchange_handle, mut pairs, mut accounts) = exchange_eur_usd_market_2_accs();
+    let (exchange_handle, mut pairs, mut accounts) = market_eur_usd_accs_2();
 
     let acc_id_1 = accounts.pop().unwrap();
     let acc_id_2 = accounts.pop().unwrap();

@@ -39,10 +39,7 @@ impl Decoder for MpCommandCodec {
     type Item = CommandBuffer;
     type Error = std::io::Error;
 
-    fn decode(
-        &mut self,
-        src: &mut BytesMut,
-    ) -> Result<Option<Self::Item>, Self::Error> {
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         if src.len() < 2 {
             // Not enough data to read length marker.
             return Ok(None);

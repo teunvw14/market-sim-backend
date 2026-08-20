@@ -35,6 +35,26 @@ class CIRProcess():
         self.value = abs(self.value + self.a * (self.b - self.value) * dt + self.sigma * sqrt(self.value) * dWt)
 
 @dataclass
+class GBMProcess():
+    '''Simple GBM process.'''
+    # Internal value
+    value: float
+    #Parameters
+    S_0: float
+    mu: float
+    sigma: float
+
+    def __init__(self, S_0, mu, sigma):
+        self.S_0 = S_0
+        self.mu = mu
+        self.sigma = sigma
+        self.value = S_0
+
+    def update(self, dt):
+        dWt = random.gauss(0, sqrt(dt))
+        self.value = self.value + self.value * (self.mu * dt + self.sigma**2 * dWt)
+
+@dataclass
 class MarketEnforcer():
     market: AssetIdPair
     price_process: CIRProcess
@@ -88,6 +108,26 @@ ENFORCERS = [
     MarketEnforcer( # CHF/EUR
         AssetIdPair(3, 1),
         CIRProcess(1.06, 1.0, 1.06, 5.0),
+    ),
+    MarketEnforcer( # SKHY/USD
+        AssetIdPair(4, 0),
+        GBMProcess(163, 0.4, 7.0)
+    ),
+    MarketEnforcer( # ADYEN.AS/EUR
+        AssetIdPair(5, 1),
+        GBMProcess(1062, 0.1, 2.0)
+    ),
+    MarketEnforcer( # NVDA/USD
+        AssetIdPair(6, 0),
+        GBMProcess(216, 0.5, 4.0)
+    ),
+    MarketEnforcer( # ASML/EUR
+        AssetIdPair(7, 1),
+        GBMProcess(1501, 0.2, 4.0)
+    ),
+    MarketEnforcer( # ASML/EUR
+        AssetIdPair(8, 0),
+        GBMProcess(463.2, 0.1, 2.0)
     ),
 ]
 

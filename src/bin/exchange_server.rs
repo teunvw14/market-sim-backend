@@ -1,7 +1,7 @@
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use std::{net::SocketAddr, time::Duration};
 
-use backend::asset::AssetIdPair;
+use backend::asset::{Asset, AssetIdPair, AssetPairSymbolic, NewAsset};
 use backend::exchange::Transaction;
 use backend::orderbook::OrderbookL1;
 use figment::Figment;
@@ -37,6 +37,12 @@ struct ExchangeServerConfig {
     bind_address_client: String,
     /// Address that the ExchangeServer's WebSocket server is exposed on
     bind_address_websocket: String,
+    /// Starting number of accounts
+    starting_accounts: usize,
+    /// Starting Assets
+    starting_assets: Vec<NewAsset>,
+    /// Starting Assets
+    starting_markets: Vec<AssetPairSymbolic>,
 }
 
 impl Default for ExchangeServerConfig {
@@ -47,6 +53,9 @@ impl Default for ExchangeServerConfig {
             ws_send_interval_ms: 500,
             bind_address_client: "127.0.0.1:5555".to_string(),
             bind_address_websocket: "127.0.0.1:5556".to_string(),
+            starting_accounts: 2,
+            starting_assets: Vec::new(),
+            starting_markets: Vec::new(),
         }
     }
 }
@@ -226,7 +235,11 @@ async fn main() {
     println!("ws_send_interval: {ws_send_interval:?}");
 
     // Initialize Exchange
-    let (exchange_handle, _pairs, _accounts) = exchange_configs::exchange_5fx_markets_5_accs();
+    let (exchange_handle, _pairs, _accounts) = exchange_configs::custom(
+        config.starting_assets,
+        config.starting_markets,
+        config.starting_accounts,
+    );
 
     // Bind TcpListener for client server and WebSocket server
     let listener_client = TcpListener::bind(&config.bind_address_client)
