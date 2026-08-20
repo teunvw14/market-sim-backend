@@ -129,10 +129,10 @@ async fn handle_connection(
                 // Insert commands and send result
                 let num_commands = decoded_commands.len();
                 let commands_results = client.send_commands(decoded_commands).await;
+                let latency = start.elapsed();
                 framed_stream.send(commands_results).await.unwrap();
 
                 // Record latency in microseconds
-                let latency = start.elapsed();
                 let _ = metrics_recorder.record_n(latency.as_micros() as u64, num_commands as u64);
             }
         }
